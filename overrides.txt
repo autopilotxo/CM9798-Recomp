@@ -1,0 +1,6 @@
+# Guest functions replaced by hand-written C in rt/overrides.c (original addresses, hex).
+# The generated version is still emitted as f_XXXXXX_orig and can be called from the override.
+013714  show_mouse_pointer   (pointer drawn by the OS instead; original kept for dragged items)
+01a68c  draw_text            (records each letter for the sharp-text layer, rt/textlayer.c)
+0106f4  main_screen          (weekly autosave check, rt/autosave.c)
+044c94  load_game            (offers a newer autosave when loading, rt/autosave.c)
