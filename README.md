@@ -1,4 +1,4 @@
-# CM 97/98 native port (static recompilation)
+# Championship Manager 97/98 Native Port (Static Recompilation)
 
 A native Windows, Linux and macOS build of the DOS football management game
 *Championship Manager 97/98* (CM2E16.EXE, version 2.93), made by statically
@@ -6,7 +6,7 @@ recompiling the original executable into C and running it on a small SDL2
 runtime.
 
 This is an unofficial fan project. It is not affiliated with or endorsed by
-Sports Interactive, Eidos, Square Enix or any current owner of the
+Sports Interactive, Eidos, Square Enix, Embracer Group or any current owner of the
 Championship Manager name. All trademarks belong to their owners.
 
 ## You need your own copy of the game
@@ -18,9 +18,8 @@ pictures and sounds from your own installation.
 
 ## Playing (release downloads)
 
-1. Download the release for your system and unzip it.
-2. Run `cm9798setup` and point it at your CM 97/98 folder. It can also import pictures and
-   sounds from Championship Manager 2 and CM 96/97.
+1. Download the release for your system and unzip it to a new folder.
+2. Run `cm9798setup` and point it at an existing CM 97/98 folder. It can also import pictures and sounds from Championship Manager 2 and CM 96/97.
 3. Start `cm9798` in the folder it set up. **The first time**, it makes the game from your
    `CM2E16.EXE` with the compiler that comes with it; this takes a minute or two and only
    happens once (and again after you install a newer release).
@@ -28,20 +27,24 @@ pictures and sounds from your own installation.
 macOS also needs SDL2 from Homebrew (`brew install sdl2 sdl2_ttf`); Linux needs your
 distribution's SDL2 and SDL2_ttf packages.
 
-## Building from source
-The build makes a **release**: what players download. It holds the launcher (`cm9798`), the
-setup tool (`cm9798setup`), the port's own code compiled as a library, and a C compiler
-([Zig](https://ziglang.org), MIT licence) as a single archive. It has **no game code** in it:
-the first time a player starts `cm9798`, it makes the game on their machine from their own
-`CM2E16.EXE`.
+## New Features
 
+- Native 64-bit build.
+- Windowed and Fullscreen modes.
+- Up to 9 playable leagues at once, as opposed to the original maximum of 3.
+- Import CM2 databases, including expansion packs, 96/97 data, pictures and sounds.
+- Selectable databases so you can play all 3 data sets on one executable.
+- Autosave, and save backups.
+- Star ratings and colour coded player stats as quality of life features.
+
+## Building from source
 To build one you need your own copy of Championship Manager 97/98 **v2.93** (`CM2E16.EXE`,
 1,407,137 bytes), because the port's code is compiled against the list of the game's functions
 made from it (`gen/`, step 2). None of it goes into the release.
 
 ---
 
-### 1. Install the tools (one-off)
+### 1. Install the tools
 
 #### Windows
 
@@ -74,7 +77,7 @@ In the UCRT64 terminal, Windows paths are written with forward slashes: `C:\Zig`
 Then download Zig for Linux (x86_64) from <https://ziglang.org/download>: keep the `.tar.xz` and
 also unpack it. (Or leave Zig out: see "Without Zig" below.)
 
-#### macOS
+#### MacOS
 
 ```
 xcode-select --install
@@ -109,7 +112,7 @@ committed (`.gitignore`).
 
 ---
 
-### 3. Build the release
+### 3. Build
 
 #### Windows (UCRT64)
 
@@ -151,9 +154,9 @@ If you made `gen/` after configuring, run the `cmake -B build ...` line again so
 
 ---
 
-### 4. The release
+### 4. Final Build
 
-The release is `build/release`: zip it up as it is.
+The final build will be in `build/release`: simply copy the files in this folder to a location of your choosing, and you're ready to play.
 
 ```
 cm9798(.exe)             the launcher players start
@@ -175,9 +178,7 @@ release, set up with `cm9798setup`, brings a new kit and the game is made again.
 #### Trying it
 
 Copy `build/release` somewhere else, close the terminal (on Windows its PATH can hide a missing
-DLL), run `cm9798setup` into a new folder, and start `cm9798` there: you get exactly what
-players get. To try changes again, build the release again and set up a new folder (or the
-same one: the changed kit makes the game again).
+DLL), run `cm9798setup` into a new folder, and start `cm9798` there, and enjoy managing your squad.
 
 ---
 
@@ -189,14 +190,6 @@ same one: the changed kit makes the game again).
 - **Use another compiler for the game:** `CM_CC=gcc cm9798 --rebuild` (with the kit kept).
 - **"release: can't make a release: gen/ is missing":** do step 2, then run the configure line again.
 - **Windows paths in the UCRT64 terminal:** forward slashes (`/c/Zig/zig.zip`), or quote them.
-
-## Features
-
-- Native 64-bit build, windowed or full screen, scaling, sharp TrueType text
-- Up to 9 playable leagues at once
-- Optional CM 2 backgrounds and match sounds (from your own CM 2 install)
-- Relative ("for your club") star ratings, autosave and save backups
-- Separate database folders, each with its own `database.cfg`
 
 ## What is in this repository
 
