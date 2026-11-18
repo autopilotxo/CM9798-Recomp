@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Championship Manager 97/98
+Comment=Native port of Championship Manager 97/98
+# change the path below if your game files are elsewhere
+Exec=sh -c 'cm9798 "$HOME/Games/CM9798"'
+Icon=cm9798
+Terminal=false
+Categories=Game;SportsGame;
+StartupWMClass=cm9798

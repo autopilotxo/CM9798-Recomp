@@ -1,0 +1,48 @@
+# generated from the user's own EXE - never commit
+/gen/
+disasm.json
+__pycache__/
+*.pyc
+
+# build output
+build*/
+*.o
+*.obj
+*.exe
+*.EXE
+*.dll
+*.so
+*.dylib
+*.app/
+
+# game data - never commit
+databases/
+SOUNDS/
+sounds/
+pictures/
+*.DB1
+*.db1
+*.PCX
+*.pcx
+*.S16
+*.s16
+*.DAT
+*.IDX
+*.CFG
+*.wav
+*.WAV
+
+# Microsoft fonts - never commit
+*.ttf
+*.TTF
+!LICENSES/*
+
+# local files
+screenshots/
+*.log
+session*.txt
+.DS_Store
+
+# release folders and the bundled compiler
+release/
+zig*/

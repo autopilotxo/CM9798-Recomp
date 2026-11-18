@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Championship Manager 97/98 Setup
+Comment=Sets up Championship Manager 97/98 for the native port
+Exec=cm9798setup
+Icon=cm9798setup
+Terminal=false
+Categories=Game;SportsGame;
+StartupWMClass=cm9798setup

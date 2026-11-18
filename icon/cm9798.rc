@@ -1,0 +1,32 @@
+/* Windows resources: program icon and the details shown under the .exe's Properties > Details */
+1 ICON "cm9798.ico"
+
+1 VERSIONINFO
+FILEVERSION     1,0,0,0
+PRODUCTVERSION  1,0,0,0
+FILEFLAGSMASK   0x3F
+FILEFLAGS       0x0
+FILEOS          0x40004      /* VOS_NT_WINDOWS32 */
+FILETYPE        0x1          /* VFT_APP */
+FILESUBTYPE     0x0
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "080904B0"     /* English (UK), Unicode */
+        BEGIN
+            VALUE "CompanyName",      "CM9798 Recomp Project"
+            VALUE "FileDescription",  "Championship Manager 97/98 - native Windows port"
+            VALUE "FileVersion",      "1.0.0.0"
+            VALUE "InternalName",     "cm9798"
+            VALUE "OriginalFilename", "cm9798.exe"
+            VALUE "ProductName",      "Championship Manager 97/98 Recomp"
+            VALUE "ProductVersion",   "1.0.0.0"
+            VALUE "LegalCopyright",   "Unofficial fan port. Requires the original game (CM2E16.EXE v2.93), which is not included. Championship Manager is a trademark of its owners."
+            VALUE "Comments",         "Statically recompiled from the DOS release; runs the original game's code natively."
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0809, 1200
+    END
+END

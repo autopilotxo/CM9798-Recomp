@@ -1,0 +1,174 @@
+# Single-instruction patches applied by gen.py (original CM2E16 addresses).
+#   <addr> replace <C statement>   - the instruction's generated code is replaced
+#   <addr> after   <C statement>   - the statement runs after the instruction
+#
+# Match commentary speed (byte 0xA42B1A: 0 = normal, 1 = fast, Space toggles it during a match).
+# The game cleared it at every kick-off; keep the player's last choice and remember it instead.
+# Space cycles normal / double / triple (rt/overrides.c); the fixed "divide by 3" used while the
+# byte is set becomes the chosen divisor, at each place it appears.
+054440 replace hook_match_speed_kickoff();
+055441 after   hook_match_speed_toggled();
+
+# Goal flash: a "Goal for ..." commentary line is redrawn 31 times, swapping colour each time,
+# 60 ms apart (about 16 changes a second on a modern PC; DOS's 55 ms clock made it far slower).
+# Now: one colour change every 250 ms, 12 changes (6 flashes, about 3 s), ending in normal colour.
+# (b_ in the first line = changes - 1, in the second = milliseconds per change)
+05df54 replace { uint32_t a_=eax,b_=0xbu,r_; r_=(a_-b_)&0xFFFFFFFFu; cf=a_<b_; of=MSB(32,(a_^b_)&(a_^r_)); SZF(32,r_); }
+05df6a replace { uint32_t a_=eax,b_=0xfau,r_; r_=(a_-b_)&0xFFFFFFFFu; cf=a_<b_; of=MSB(32,(a_^b_)&(a_^r_)); SZF(32,r_); }
+
+# Sharp text: report each character as the game's text routine is about to draw it.
+01a70a after   hook_text_glyph();
+055461 replace ebx = match_speed_divisor();
+05dfe9 replace ebx = match_speed_divisor();
+05e0b6 replace ebx = match_speed_divisor();
+05e0ed replace ebx = match_speed_divisor();
+
+# Intro logos: forget the key that skipped them, so it doesn't reach the Options menu (where
+# Enter chose "Quit Program").
+044d98 after   hook_intro_done();
+
+# Starting date. A new game starts on 16 July 1997 (0x46014); the day, month, year and weekday
+# come from the port instead (database.cfg "start ="), so a career can start on another date
+# (the CM2 database: Tuesday 1 August 1995, as CM2 did).
+046020 replace SET8H(eax, start_day());
+046022 replace SET8L(edx, start_month());
+046030 replace SET8H(edx, start_year_byte());
+046099 replace SET8H(ebx, start_weekday());
+
+# "First season" rules: these compared the date with 1997, the year every 97/98 career began.
+# They now compare with the year this career began (byte 0xA44976, set once at new game and kept
+# in the save), so they work for any starting year and behave exactly as before for 97/98 games.
+# Checks for real events (the 1998 World Cup in France, the 2002 hosts, Anderlecht's European ban,
+# the 1997/98 Fair Play places, rules from 2000) keep their real years and are left alone.
+# season so far started in the first season (<=)
+0324bc replace { uint32_t a_=eax,b_=first_season_year(),r_; r_=(a_-b_)&0xFFFFFFFFu; cf=a_<b_; of=MSB(32,(a_^b_)&(a_^r_)); SZF(32,r_); }
+# first season: a month limit is one later (the season starts in July)
+050d72 replace { uint32_t a_=eax,b_=first_season_year(),r_; r_=(a_-b_)&0xFFFFFFFFu; cf=a_<b_; of=MSB(32,(a_^b_)&(a_^r_)); SZF(32,r_); }
+# first season: no work permit expiry
+063ea5 replace { uint32_t a_=eax,b_=first_season_year(),r_; r_=(a_-b_)&0xFFFFFFFFu; cf=a_<b_; of=MSB(32,(a_^b_)&(a_^r_)); SZF(32,r_); }
+# first season: no transfer requests before October
+0816cd replace { uint32_t a_=eax,b_=first_season_year(),r_; r_=(a_-b_)&0xFFFFFFFFu; cf=a_<b_; of=MSB(32,(a_^b_)&(a_^r_)); SZF(32,r_); }
+# first season special case
+081a75 replace { uint32_t a_=eax,b_=first_season_year(),r_; r_=(a_-b_)&0xFFFFFFFFu; cf=a_<b_; of=MSB(32,(a_^b_)&(a_^r_)); SZF(32,r_); }
+# competition dates after the first season
+095974 replace { uint32_t a_=eax,b_=first_season_year(),r_; r_=(a_-b_)&0xFFFFFFFFu; cf=a_<b_; of=MSB(32,(a_^b_)&(a_^r_)); SZF(32,r_); }
+# first season competition set-up
+095e86 replace { uint32_t a_=eax,b_=first_season_year(),r_; r_=(a_-b_)&0xFFFFFFFFu; cf=a_<b_; of=MSB(32,(a_^b_)&(a_^r_)); SZF(32,r_); }
+# first season competition set-up
+096408 replace { uint32_t a_=eax,b_=first_season_year(),r_; r_=(a_-b_)&0xFFFFFFFFu; cf=a_<b_; of=MSB(32,(a_^b_)&(a_^r_)); SZF(32,r_); }
+# after the first season: friendly flag reset
+098dce replace { uint32_t a_=eax,b_=first_season_year(),r_; r_=(a_-b_)&0xFFFFFFFFu; cf=a_<b_; of=MSB(32,(a_^b_)&(a_^r_)); SZF(32,r_); }
+# first season: alternative fixture table
+0a24bc replace { uint32_t a_=eax,b_=first_season_year(),r_; r_=(a_-b_)&0xFFFFFFFFu; cf=a_<b_; of=MSB(32,(a_^b_)&(a_^r_)); SZF(32,r_); }
+# first season competition round set-up
+0a3287 replace { uint32_t a_=eax,b_=first_season_year(),r_; r_=(a_-b_)&0xFFFFFFFFu; cf=a_<b_; of=MSB(32,(a_^b_)&(a_^r_)); SZF(32,r_); }
+# first season: Cup Winners' Cup entrants from last season's cup winners
+09cdfa replace { uint32_t a_=edx,b_=first_season_year(),r_; r_=(a_-b_)&0xFFFFFFFFu; cf=a_<b_; of=MSB(32,(a_^b_)&(a_^r_)); SZF(32,r_); }
+# first season: UEFA Cup entry for last season's League Cup winners
+09e193 replace { uint32_t a_=eax,b_=first_season_year(),r_; r_=(a_-b_)&0xFFFFFFFFu; cf=a_<b_; of=MSB(32,(a_^b_)&(a_^r_)); SZF(32,r_); }
+# first season: UEFA Cup entry for last season's League Cup winners
+09e1f5 replace { uint32_t a_=eax,b_=first_season_year(),r_; r_=(a_-b_)&0xFFFFFFFFu; cf=a_<b_; of=MSB(32,(a_^b_)&(a_^r_)); SZF(32,r_); }
+
+# Missing dates of birth are filled in at new game (0x49138). A player who comes out under 16 is
+# given 1981 and the fill-in is repeated: in a 1997 start that makes him 16, but in a 1995 start
+# he'd be 14 for ever and the game hung at "Initializing Game 91%". Use (first season - 16):
+# still 1981 for 97/98 careers, 1979 for a career starting in 1995.
+04938c replace SET8L(eax, first_season_year() - 16u);
+
+# Front-end screens: the game's folder ("C:\") was shown in a tab at the top right of the Options
+# and Choose Leagues screens. Meaningless in the port (and on Linux): not drawn.
+044de2 replace (void)0;
+045839 replace (void)0;
+
+# Options screen: "Change Directory" (choice 6) is now "Change Database" (text in rt/overrides.c):
+# it switches between the 97/98 and 95/96 databases instead of asking for a DOS folder, then the
+# menu carries on as after any other choice.
+04558f replace hook_change_database(); goto L_104575b;
+
+# Options screen: a sixth box, "Restore Backup" (choice 8), between Change Database and Hall Of Fame,
+# so the bottom row is Change Database / Restore Backup / Hall Of Fame, like the six boxes of the
+# European Competition screen. The menu's text is the start ("New Game*0|", "Restore Game*4|" when
+# there are saved games) plus this tail, which no longer fits where the original was, so it is
+# built in free memory (rt/overrides.c). Choice 8 opens the port's Restore Backup panel; then the
+# menu carries on as after any other choice (it isn't 7, so it goes back to the menu).
+044e7a replace esi = options_menu_tail();
+045751 after   hook_options_choice();
+
+# Competition histories (past winners and runners-up) are built for a new game by 0x37238, from a
+# list of finals up to May 1997. A career starting earlier (CM2: 1995, 96/97: 1996) mustn't have
+# finals that haven't happened yet - and "last season's" winners (the Charity Shield, the cup
+# winners' European places) come from the newest entry. hook_trim_histories() drops entries after
+# the season before the career began. Called after each of the three calls to 0x37238.
+045167 after hook_trim_histories();
+04518a after hook_trim_histories();
+045426 after hook_trim_histories();
+
+# Player screen: a star rating in the blue position bar (rt/stars.c, drawn by rt/sdl.c). The game
+# has just made the bar's text ("Forward (Right/Centre)", in eax) for player esi.
+05fa7d after   hook_player_position();
+
+# How many leagues a new game may run. The 16MB build allows 1-3 ("This 16MB version of %s must have
+# between %s and %s leagues selected to run"); the most is a constant loaded here. max_leagues()
+# (rt/overrides.c) gives 3, or 5 with "max_leagues = 5" (the F1 menu's Gameplay tab). Five was played
+# through a whole season (England, Italy, Spain, Germany, France: the biggest five). Six gets stuck
+# on the first day, showing the same Charity Shield news over and over; seven or more runs out of
+# the game's 80 league-table slots ("alloctabs 1").
+045817 replace SET8L(edx,max_leagues());
+# The leagues chosen must also fit the game's 80 league tables ("alloctabs 1" otherwise, once the
+# game is being set up). Measured on the 97/98 database: the European competitions always take 36;
+# England 20, Holland 18, Scotland 4, Belgium 3, the others 2 each - so the leagues can use 44. Three
+# leagues never come to more (England, Holland and Scotland: 42), but four or five can.
+# They must also come to 127 competitions at most (13, then England 11, Scotland 10, Italy 8, Holland,
+# Portugal and Belgium 7, Spain, Germany and France 6 - all nine: 81). The game had room for 50;
+# relocations.txt gives it 128.
+# hook_check_leagues() runs after the game's own count check (0x101e4fc: al = 1 if 1..max leagues)
+# when Done is clicked, and turns a choice that won't fit into a "no"; hook_leagues_message() then
+# replaces the error text the game has just written (sprintf at 0x45a88 - its buffer is the first
+# argument, still on the stack) with the reason.
+045a33 after hook_check_leagues();
+045a88 after hook_leagues_message();
+
+# League tables: the game has 127 now (relocations.txt). Saving and loading CPDATA still write and
+# read the first 80 where they always were - the last thing in the file before it's closed - and
+# these put the other 47 after them (the original game, reading such a file, stops after the 80).
+# 0x37238 is load_cpdata (its fread wrapper 0x1dfdc), 0x3818c save_cpdata (fwrite wrapper 0x1e028).
+037bac after hook_load_more_tables();
+038275 after hook_save_more_tables();
+
+# The competition calendar holds 128 competitions now (relocations.txt). FXDATA ends with it: the
+# game writes 0x5140 bytes of it and closes the file. Saving (0x36ec4) now writes those from a copy
+# laid out the old way (competitions 0-49), then the whole calendar and all the fixtures after
+# them; loading (0x36df8) reads the old block into the new layout, then the whole lot if it's there.
+036e9d replace eax = calendar_old_buffer();
+036ea4 after hook_load_calendar();
+036f69 replace eax = calendar_pack();
+036f70 after hook_save_calendar();
+# Fixtures hold 250 a date now (relocations.txt); FXDATA keeps the old 120-a-date block before the
+# calendar, and the whole of them goes after the whole calendar (hook_save_calendar).
+036e87 replace eax = fixtures_old_buffer();
+036e8e after hook_load_fixtures();
+036f53 replace eax = fixtures_pack();
+
+# The clubs' bytes for each competition have a home of their own now (relocations.txt). load_tmdata
+# (0x38294; al = 0: a new game, from the database) clears them for a new game, and after reading a
+# saved game's clubs reads them from the end of the file - or, from a save without them, takes the
+# first 50 from the club records. save_tmdata (0x39954) first puts the first 50 back in the club
+# records, and at the end writes them all.
+038294 after hook_load_tmdata_begin();
+03940b after hook_load_club_comps();
+039954 after hook_save_tmdata_begin();
+039a67 after hook_save_club_comps();
+# Competition Info: the menu builder has room for 12 buttons, and nine leagues make 13 (International,
+# European, nine countries, two awards). With more than eight leagues the countries go one level down,
+# behind a "Domestic Competitions" button (id 13, which the dispatch ignores, so the screen is rebuilt).
+010bee replace esi = competition_menu_tail();
+010ca5 after hook_competition_choice();
+# Sound (rt/sound.c): CM2's crowd and whistles. The crowd starts at kick-off (where CM2 starts it; 97/98's
+# own start, gated by a flag nothing sets, follows), stops where 97/98 ends its sample, and each line of
+# commentary gives its event number (ax) for the cheers, boos, gasps and whistles.
+05afbf after hook_crowd_start();
+05d31d after hook_crowd_stop();
+05d3b5 after hook_crowd_stop();
+05d44d after hook_crowd_stop();
+05d4e5 after hook_crowd_stop();
+05d73a after hook_commentary_event();
