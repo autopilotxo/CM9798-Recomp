@@ -206,6 +206,16 @@ DLL), run `cm9798setup` into a new folder, and start `cm9798` there, and enjoy m
 Not included, and never to be committed: `gen/`, any `.EXE`, database files,
 pictures, sounds, saves, and Microsoft fonts.
 
+## Credits
+
+- **autopilotxo**: the project, its direction, testing on Windows, Linux and macOS, and the icons.
+- **Claude** (Anthropic): developed with the help of Claude, which wrote much of the recompiler,
+  runtime, launcher and setup code alongside the project's author.
+- **Sports Interactive** and **Eidos**: the original *Championship Manager 97/98*.
+- [SDL](https://www.libsdl.org), [SDL_ttf](https://github.com/libsdl-org/SDL_ttf),
+  [Zig](https://ziglang.org) and the [DejaVu fonts](https://dejavu-fonts.github.io), which the port
+  is built with and on.
+
 ## Licence
 
 The code in this repository is released under the [MIT License](LICENSE). Generated
