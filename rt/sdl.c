@@ -14,7 +14,9 @@
  *
  * Env: CM_INPUTLOG=1 (print input), CM_RECORD=<file> (record session, deterministic clock).
  */
+#ifndef SDL_MAIN_HANDLED
 #define SDL_MAIN_HANDLED
+#endif
 #include "rt_internal.h"
 #include <SDL.h>
 #include <stdio.h>

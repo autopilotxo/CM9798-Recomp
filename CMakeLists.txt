@@ -39,6 +39,12 @@ if(CMAKE_C_COMPILER MATCHES "zig")
       set(CMAKE_LIBRARY_ARCHITECTURE x86_64-linux-gnu)
     endif()
   endif()
+  # ...and Zig (building for an older glibc) leaves out the system's own header folders: Debian and Ubuntu
+  # keep part of SDL2's headers in /usr/include/<that name>/SDL2. Searched last, after Zig's own C headers,
+  # so only what Zig hasn't got (SDL2/_real_SDL_config.h) comes from there.
+  if(UNIX AND NOT APPLE AND IS_DIRECTORY "/usr/include/${CMAKE_LIBRARY_ARCHITECTURE}/SDL2")
+    add_compile_options("SHELL:-idirafter /usr/include/${CMAKE_LIBRARY_ARCHITECTURE}")
+  endif()
 endif()
 
 file(GLOB GEN_SOURCES ${CMAKE_SOURCE_DIR}/gen/*.c)
