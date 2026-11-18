@@ -5,7 +5,7 @@
  *   Defaults to the current directory.
  */
 #include "rt_internal.h"
-#include "funcs.h"
+#include "game_funcs.h"
 #include "backup.h"
 #include "database.h"
 #include <stdio.h>

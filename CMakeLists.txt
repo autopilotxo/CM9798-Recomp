@@ -5,7 +5,7 @@ project(cm9798 C)
 #   gen/  - C generated from the original executable by cmgen / make_gen.py (not part of the source)
 #   rt/   - runtime: memory, DOS/DPMI/BIOS, VESA video, input, EXE loader, SDL window
 # Targets: cm9798 (the launcher players start: makes the game on first run), cm9798setup (the
-# installer), cmgen, and with gen/ present cm9798rt (rt/ as a library) and cm9798-game (the whole
+# installer), cmgen, cm9798rt (rt/ as a library), and with gen/ present cm9798-game (the whole
 # game, also built here to check it links). "--target release" makes the folder to give players (README.md).
 #
 # Options:
@@ -30,6 +30,15 @@ endif()
 if(CMAKE_C_COMPILER MATCHES "zig")
   add_compile_options(-fno-sanitize=undefined)
   add_link_options(-O2 -fno-sanitize=undefined)
+  # Linux: CMake can't ask Zig for the system's library folder name, so find_package wouldn't look in
+  # /usr/lib/x86_64-linux-gnu (Debian, Ubuntu) for SDL2's files
+  if(UNIX AND NOT APPLE AND NOT CMAKE_LIBRARY_ARCHITECTURE)
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
+      set(CMAKE_LIBRARY_ARCHITECTURE aarch64-linux-gnu)
+    else()
+      set(CMAKE_LIBRARY_ARCHITECTURE x86_64-linux-gnu)
+    endif()
+  endif()
 endif()
 
 file(GLOB GEN_SOURCES ${CMAKE_SOURCE_DIR}/gen/*.c)
@@ -73,14 +82,10 @@ add_executable(cmgen ${CMGEN_SOURCES})
 set_property(TARGET cmgen PROPERTY C_STANDARD 11)
 target_compile_definitions(cmgen PRIVATE CMGEN_MAIN)
 
-if(NOT GEN_SOURCES)
-  message(WARNING "gen/ is missing, so only the launcher, cmgen and the installer are built. The game's C is made "
-                  "from your own copy of the game:\n  build/cmgen <path to your CM2E16.EXE> . gen\n"
-                  "(or python3 make_gen.py <path to your CM2E16.EXE>), then configure again.")
-else()
-# the port's own code (everything but the game's): a library the launcher links the game against
+# the port's own code (everything but the game's): a library the launcher links the game against. It only
+# needs the names of the game's functions it uses (rt/game_funcs.h), not gen/, so a release builds without it.
 add_library(cm9798rt STATIC ${RT_SOURCES})
-target_include_directories(cm9798rt PUBLIC rt PRIVATE gen)
+target_include_directories(cm9798rt PUBLIC rt)
 set_property(TARGET cm9798rt PROPERTY C_STANDARD 11)
 target_compile_options(cm9798rt PRIVATE -fno-strict-aliasing -fwrapv)
 if(CM_CALLTRACE)
@@ -102,6 +107,10 @@ if(NOT CM_HEADLESS)
   endif()
 endif()
 
+if(NOT GEN_SOURCES)
+  message(STATUS "gen/ isn't there: building the launcher, setup, cmgen and the port's library (all a release needs). "
+                 "To build the whole game here as well, make gen/ from your CM2E16.EXE with cmgen and configure again.")
+else()
 # the whole game, built here too, to check it compiles and links (players get it from the launcher)
 set(GAME_EXTRA)
 if(WIN32)
@@ -261,14 +270,14 @@ if(TARGET cm9798rt AND TARGET cm9798 AND TARGET cm9798setup)
   else()
     list(APPEND PKG_ARGS -DPLATFORM=linux)
   endif()
+  if(TARGET cm9798-game)
+    list(APPEND PKG_DEPS cm9798-game)    # (with gen/: check the whole game links; on Windows, copy its DLLs)
+  endif()
   add_custom_target(release COMMAND ${CMAKE_COMMAND} ${PKG_ARGS} -P ${CMAKE_SOURCE_DIR}/tools/package.cmake
-                    DEPENDS cm9798 cm9798setup cm9798rt cm9798-game ${PKG_DEPS} VERBATIM)
+                    DEPENDS cm9798 cm9798setup cm9798rt ${PKG_DEPS} VERBATIM)
 else()
   # say why there's nothing to package, rather than "unknown target"
   set(PKG_WHY "")
-  if(NOT GEN_SOURCES)
-    string(APPEND PKG_WHY " gen/ is missing (make it with cmgen, then configure again).")
-  endif()
   if(CM_HEADLESS)
     string(APPEND PKG_WHY " CM_HEADLESS is on.")
   endif()

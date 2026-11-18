@@ -8,7 +8,7 @@
  * Addresses below are original CM2E16 addresses; A() relocates them (+16 MB).
  */
 #include "rt_internal.h"
-#include "funcs.h"
+#include "game_funcs.h"
 #include "version.h"
 #include <stdlib.h>
 #include <stdio.h>

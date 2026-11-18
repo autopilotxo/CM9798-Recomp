@@ -16,7 +16,7 @@
  * backed up (backups/) and the autosave's files are copied over it before the game reads them.
  */
 #include "rt_internal.h"
-#include "funcs.h"
+#include "game_funcs.h"
 #include "autosave.h"
 #include "backup.h"
 #include "database.h"

@@ -39,9 +39,9 @@ with an Apple developer certificate).
 - Star ratings and colour coded player stats as quality of life features.
 
 ## Building from source
-To build one you need your own copy of Championship Manager 97/98 **v2.93** (`CM2E16.EXE`,
-1,407,137 bytes), because the port's code is compiled against the list of the game's functions
-made from it (`gen/`, step 2). None of it goes into the release.
+This builds the release players download: the launcher, the setup tool, the port's own code
+compiled as a library, and the C compiler that makes the game on the player's machine. It needs
+no game files: the game itself is only ever made from each player's own `CM2E16.EXE`.
 
 ---
 
@@ -101,24 +101,12 @@ need `brew install sdl2 sdl2_ttf`.
 
 ---
 
-### 2. Get the source and make `gen/`
+### 2. Get the source
 
 ```
 git clone https://github.com/autopilotxo/CM9798-Recomp.git
 cd CM9798-Recomp
 ```
-
-`gen/` is made from your `CM2E16.EXE` by `cmgen`, which is built first. Use the configure
-command for your system from step 3, then (replacing `/path/to/CM2E16.EXE` with yours):
-
-```
-cmake --build build --target cmgen
-./build/cmgen /path/to/CM2E16.EXE . gen
-```
-
-(`./build/cmgen.exe` on Windows.) It checks the EXE is v2.93 and takes about a second. Run it
-again after changing `patches.txt`, `relocations.txt` or `overrides.txt`. `gen/` is never
-committed (`.gitignore`).
 
 ---
 
@@ -161,8 +149,6 @@ then uses the player's own compiler: `cc`/`gcc`/`clang` on Linux, Apple's comman
 a Mac (`xcode-select --install`), and says how to install one if there's none. Windows has no
 compiler of its own, so a Windows release always includes Zig.
 
-If you made `gen/` after configuring, run the `cmake -B build ...` line again so CMake sees it.
-
 ---
 
 ### 4. Final Build
@@ -200,7 +186,6 @@ DLL), run `cm9798setup` into a new folder, and start `cm9798` there, and enjoy m
 - **Make the game again:** set it up again with `cm9798setup`, or start the first run with
   `CM_KEEP_BUILD=1` (keeps the kit) and then use `cm9798 --rebuild`.
 - **Use another compiler for the game:** `CM_CC=gcc cm9798 --rebuild` (with the kit kept).
-- **"release: can't make a release: gen/ is missing":** do step 2, then run the configure line again.
 - **Windows paths in the UCRT64 terminal:** forward slashes (`/c/Zig/zig.zip`), or quote them.
 
 ## What is in this repository
