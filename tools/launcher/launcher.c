@@ -230,6 +230,7 @@ static int poll_proc(proc_t p, int *status) {   /* 1 = finished */
 static void kill_proc(proc_t p) { TerminateProcess(p, 1); CloseHandle(p); }
 static void nap(void) { Sleep(20); }
 static int ncpu(void) { SYSTEM_INFO si; GetSystemInfo(&si); return si.dwNumberOfProcessors > 0 ? (int)si.dwNumberOfProcessors : 2; }
+static double mem_gb(void) { MEMORYSTATUSEX m; m.dwLength = sizeof m; return GlobalMemoryStatusEx(&m) ? m.ullTotalPhys / 1073741824.0 : 8; }
 static void set_env(const char *k, const char *v) { SetEnvironmentVariableA(k, v); }
 #else
 typedef pid_t proc_t;
@@ -246,11 +247,12 @@ static int spawn(char **v, int to_log, proc_t *p) {
 static int poll_proc(proc_t p, int *status) {
     int st; pid_t r = waitpid(p, &st, WNOHANG);
     if (r == 0) return 0;
-    *status = (r < 0) ? 1 : WIFEXITED(st) ? WEXITSTATUS(st) : 128; return 1;
+    *status = (r < 0) ? 1 : WIFEXITED(st) ? WEXITSTATUS(st) : 128 + (WIFSIGNALED(st) ? WTERMSIG(st) : 0); return 1;
 }
 static void kill_proc(proc_t p) { int st; kill(p, SIGTERM); waitpid(p, &st, 0); }
 static void nap(void) { usleep(20000); }
 static int ncpu(void) { long n = sysconf(_SC_NPROCESSORS_ONLN); return n > 0 ? (int)n : 2; }
+static double mem_gb(void) { long p = sysconf(_SC_PHYS_PAGES), z = sysconf(_SC_PAGESIZE); return p > 0 && z > 0 ? (double)p * z / 1073741824.0 : 8; }
 static void set_env(const char *k, const char *v) { setenv(k, v, 1); }
 #endif
 
@@ -448,8 +450,13 @@ static int build(const char *exe, char *err, size_t errn) {
       if (d) closedir(d); }
     qsort(src, ns, sizeof *src, by_size);              /* biggest first: they take longest */
     long total = 0, done = 0; for (int i = 0; i < ns; i++) total += src[i].size;
-    int jobs = ncpu(); if (jobs > 16) jobs = 16; if (jobs < 1) jobs = 1;
-    proc_t run[16]; int run_i[16], nrun = 0, next = 0, failed = 0;
+    /* the biggest files take 1-2 GB each to compile: no more at once than the memory allows (a compiler
+       the system stops for lack of memory says nothing); a file that fails is tried again on its own */
+    int jobs = ncpu(), by_mem = (int)(mem_gb() / 2.5);
+    if (jobs > by_mem) jobs = by_mem;
+    if (jobs > 16) jobs = 16; if (jobs < 1) jobs = 1;
+    logf_("compiling %d files, %d at a time (%d processors, %.0f GB)\n", ns, jobs, ncpu(), mem_gb());
+    proc_t run[16]; int run_i[16], nrun = 0, next = 0, failed = 0, retry[64], nretry = 0;
     char objs[64][1400];
     while ((next < ns || nrun) && !failed && !ui_cancelled) {
         while (nrun < jobs && next < ns) {
@@ -467,14 +474,28 @@ static int build(const char *exe, char *err, size_t errn) {
         for (int k = 0; k < nrun; k++) {
             int st;
             if (poll_proc(run[k], &st)) {
-                if (st) { failed = 1; snprintf(err, errn, "The game couldn't be compiled (%s).", strrchr(src[run_i[k]].path, '/') + 1); }
-                done += src[run_i[k]].size;
+                if (st) {
+                    logf_("%s: the compiler stopped (status %d)%s\n", strrchr(src[run_i[k]].path, '/') + 1, st, st > 128 ? " - stopped by the system, probably for memory" : "");
+                    retry[nretry++] = run_i[k];
+                } else done += src[run_i[k]].size;
                 run[k] = run[nrun - 1]; run_i[k] = run_i[nrun - 1]; nrun--; k--;
             }
         }
         char what[96]; snprintf(what, sizeof what, "Compiling (%d of %d)", next - nrun, ns);
         ui_progress(150 + (int)(800.0 * done / (total ? total : 1)), what);
         nap();
+    }
+    /* what failed, once more, one at a time */
+    for (int r = 0; r < nretry && !failed && !ui_cancelled; r++) {
+        int i = retry[r]; args_t a = {0};
+        for (int j = 0; j < cc.n; j++) arg(&a, cc.v[j]);
+        arg(&a, "-c"); for (int j = 0; j < cfl.n; j++) arg(&a, cfl.v[j]);
+        arg(&a, inc1); arg(&a, inc2); arg(&a, src[i].path); arg(&a, "-o"); arg(&a, objs[i]);
+        char what[96]; snprintf(what, sizeof what, "Compiling %s again", strrchr(src[i].path, '/') + 1);
+        int st = run_wait(a.v, 150 + (int)(800.0 * done / (total ? total : 1)), what);
+        arg_free(&a);
+        if (st) { failed = 1; snprintf(err, errn, "The game couldn't be compiled (%s).", strrchr(src[i].path, '/') + 1); }
+        else done += src[i].size;
     }
     if (failed || ui_cancelled) {
         for (int k = 0; k < nrun; k++) kill_proc(run[k]);
