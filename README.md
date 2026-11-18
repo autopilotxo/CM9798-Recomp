@@ -9,6 +9,8 @@ This is an unofficial fan project. It is not affiliated with or endorsed by
 Sports Interactive, Eidos, Square Enix, Embracer Group or any current owner of the
 Championship Manager name. All trademarks belong to their owners.
 
+Disclaimer: Claude AI was used to help create this recompilation.
+
 ## You need your own copy of the game
 
 This repository and its releases contain **no game code and no game data**. The game is
