@@ -385,7 +385,13 @@ static void unpack_compiler(void) {
         if (is_dir(p)) { snprintf(top, sizeof top, "%s", p); break; }
     }
     if (d) closedir(d);
-    if (!top[0] || rename(top, zig)) logf_("couldn't put the compiler in %s\n", zig);
+    if (!top[0] || rename(top, zig)) { logf_("couldn't put the compiler in %s\n", zig); return; }
+#ifdef __APPLE__
+    /* files unpacked from a download are marked as such, and macOS stops programs marked that way that
+       aren't signed by a known developer: unmark the compiler (it came with the game, which the player
+       chose to run) */
+    if (is_file("/usr/bin/xattr")) { char *x[] = { "/usr/bin/xattr", "-dr", "com.apple.quarantine", zig, NULL }; run_wait(x, 150, "Unpacking the compiler (once)"); }
+#endif
 }
 
 static void tidy_kit(void);
