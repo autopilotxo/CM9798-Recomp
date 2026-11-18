@@ -96,8 +96,8 @@ Homebrew. After step 2, make a `Frameworks` folder in the source folder and copy
 - `SDL2_ttf.framework`, from `SDL2_ttf-2.x.x.dmg` at <https://github.com/libsdl-org/SDL_ttf/releases>
 
 (latest **2.x** of each; both work on Apple Silicon and Intel). With them there, the build uses
-them instead of Homebrew's SDL; without them it falls back to Homebrew's, and players would
-need `brew install sdl2 sdl2_ttf`.
+them instead of Homebrew's SDL; without them it falls back to Homebrew's, and would
+need `brew install sdl2 sdl2_ttf` to work correctly.
 
 ---
 
