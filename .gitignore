@@ -46,3 +46,6 @@ session*.txt
 # release folders and the bundled compiler
 release/
 zig*/
+
+# macOS: the SDL frameworks put in the source folder for builds
+Frameworks/

@@ -24,8 +24,9 @@ pictures and sounds from your own installation.
    `CM2E16.EXE` with the compiler that comes with it; this takes a minute or two and only
    happens once (and again after you install a newer release).
 
-macOS also needs SDL2 from Homebrew (`brew install sdl2 sdl2_ttf`); Linux needs your
-distribution's SDL2 and SDL2_ttf packages.
+Linux needs your distribution's SDL2 and SDL2_ttf packages (most desktops have them). On macOS,
+the first time, right-click `cm9798setup` and `cm9798` and choose **Open** (they aren't signed
+with an Apple developer certificate).
 
 ## New Features
 
@@ -89,6 +90,15 @@ brew install cmake sdl2 sdl2_ttf
 Then download Zig for your kind of Mac (aarch64 for Apple Silicon, x86_64 for Intel) from
 <https://ziglang.org/download> and keep the `.tar.xz`. (Or leave Zig out: see "Without Zig".)
 
+Finally get the SDL project's own frameworks, so the release carries SDL and players don't need
+Homebrew. After step 2, make a `Frameworks` folder in the source folder and copy into it:
+- `SDL2.framework`, from `SDL2-2.x.x.dmg` at <https://github.com/libsdl-org/SDL/releases>
+- `SDL2_ttf.framework`, from `SDL2_ttf-2.x.x.dmg` at <https://github.com/libsdl-org/SDL_ttf/releases>
+
+(latest **2.x** of each; both work on Apple Silicon and Intel). With them there, the build uses
+them instead of Homebrew's SDL; without them it falls back to Homebrew's, and players would
+need `brew install sdl2 sdl2_ttf`.
+
 ---
 
 ### 2. Get the source and make `gen/`
@@ -141,7 +151,8 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release -DCM_ZIG=/path/to/zig-aarch64-macos-VE
 cmake --build build --target release -j$(sysctl -n hw.ncpu)
 ```
 
-Players need SDL2 from Homebrew (`brew install sdl2 sdl2_ttf`).
+With the frameworks in `Frameworks/` (step 1), the release includes them and players need
+nothing else.
 
 #### Without Zig (Linux and macOS only)
 
@@ -162,6 +173,7 @@ The final build will be in `build/release`: simply copy the files in this folder
 cm9798(.exe)             the launcher players start
 cm9798setup(.exe)        the setup tool
 SDL2.dll, SDL2_ttf.dll   (Windows)
+Frameworks/              (macOS: SDL2.framework, SDL2_ttf.framework)
 build/                   the kit the game is made with:
   lib/libcm9798rt.a        the port's code, compiled
   include/, data/          rt.h and rt_internal.h; functions.json, labels.csv, patches.txt, ...

@@ -40,8 +40,24 @@ if(CM_HEADLESS)
   list(APPEND RT_SOURCES rt/headless.c)
 else()
   list(APPEND RT_SOURCES rt/sdl.c rt/sharptext.c)
+  # macOS: the SDL project's SDL2.framework and SDL2_ttf.framework in Frameworks/ (from their .dmg
+  # downloads) are used instead of Homebrew's, and go into the release, so players need no Homebrew.
+  # The programs find them in a Frameworks folder next to themselves (the game: in the folder above).
+  set(CM_MAC_FW "${CMAKE_SOURCE_DIR}/Frameworks")
+  if(APPLE AND EXISTS "${CM_MAC_FW}/SDL2.framework" AND EXISTS "${CM_MAC_FW}/SDL2_ttf.framework")
+    set(CM_MAC_FRAMEWORKS ON)
+    message(STATUS "SDL: the frameworks in ${CM_MAC_FW}")
+    foreach(fw SDL2 SDL2_ttf)
+      add_library(${fw}::${fw} INTERFACE IMPORTED)
+      set_target_properties(${fw}::${fw} PROPERTIES
+        INTERFACE_INCLUDE_DIRECTORIES "${CM_MAC_FW}/${fw}.framework/Headers"
+        INTERFACE_COMPILE_OPTIONS "SHELL:-F \"${CM_MAC_FW}\""
+        INTERFACE_LINK_OPTIONS "SHELL:-F \"${CM_MAC_FW}\";SHELL:-framework ${fw};SHELL:-Wl,-rpath,@executable_path/Frameworks;SHELL:-Wl,-rpath,@executable_path/../Frameworks")
+    endforeach()
+  else()
   find_package(SDL2 REQUIRED CONFIG)
   find_package(SDL2_ttf CONFIG QUIET)
+  endif()
   if(NOT TARGET SDL2_ttf::SDL2_ttf)
     find_package(PkgConfig QUIET)
     if(PKG_CONFIG_FOUND)
@@ -124,6 +140,9 @@ endif()
 # The game runs on the main thread and recurses deeply; give it the same 64MB stack as on Windows.
 if(APPLE)
   target_link_options(cm9798-game PRIVATE -Wl,-stack_size,0x4000000)
+  if(CM_MAC_FRAMEWORKS)
+    target_link_options(cm9798-game PRIVATE "SHELL:-Wl,-rpath,\"${CM_MAC_FW}\"")   # (built here, not shipped)
+  endif()
 endif()
 endif()   # gen/
 
@@ -238,7 +257,7 @@ if(TARGET cm9798rt AND TARGET cm9798 AND TARGET cm9798setup)
          -DSDLLIB=${CM_SDL2_IMPLIB} -DTTFLIB=${CM_SDL2TTF_IMPLIB})
     set(PKG_DEPS cm9798icon)
   elseif(APPLE)
-    list(APPEND PKG_ARGS -DPLATFORM=mac)
+    list(APPEND PKG_ARGS -DPLATFORM=mac -DMACFW=${CM_MAC_FRAMEWORKS})
   else()
     list(APPEND PKG_ARGS -DPLATFORM=linux)
   endif()

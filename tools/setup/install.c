@@ -150,6 +150,31 @@ static int put_kit(const char *from, const char *to) {
     return k;
 }
 
+#ifdef __APPLE__
+#include <unistd.h>
+/* macOS: the SDL frameworks (Frameworks/SDL2.framework, SDL2_ttf.framework) next to the programs: copied
+   with their symbolic links (Versions/Current and the rest) kept as links */
+static int put_links_tree(const char *from, const char *to) {
+    DIR *d = opendir(from); struct dirent *e; int k = 0;
+    if (!d) return 0;
+    if (!mkdirs(to)) { closedir(d); say("  can't create %s\n", to); n_failed++; return 0; }
+    while ((e = readdir(d))) {
+        if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) continue;
+        char p[1600], q[1700]; snprintf(p, sizeof p, "%s/%s", from, e->d_name); snprintf(q, sizeof q, "%s/%s", to, e->d_name);
+        struct stat st; if (lstat(p, &st)) continue;
+        if (S_ISLNK(st.st_mode)) {
+            char t[1600]; ssize_t n = readlink(p, t, sizeof t - 1); if (n <= 0) continue; t[n] = 0;
+            unlink(q); if (symlink(t, q) == 0) k++; else { say("  couldn't link %s\n", q); n_failed++; }
+        } else if (S_ISDIR(st.st_mode)) k += put_links_tree(p, q);
+        else if (S_ISREG(st.st_mode)) {
+            if (copy_file(p, q)) { k++; chmod(q, st.st_mode & 0777); } else { say("  couldn't copy %s\n", p); n_failed++; }
+        }
+    }
+    closedir(d);
+    return k;
+}
+#endif
+
 /* ------------------------------------------------------------------ checks */
 static uint32_t crc32_file(const char *path, long *size) {
     FILE *f = fopen(path, "rb"); if (!f) { *size = -1; return 0; }
@@ -447,6 +472,10 @@ int install_run(const struct install_opts *o, install_log_fn log) {
               say("The build kit (the game is made from your CM2E16.EXE the first time it's started)...\n");
               int k = put_kit(from, to); n_copied += k; say("  %d files\n", k);   /* (an older game is made again: game.stamp) */
           } else say("  no build folder next to the installer - the game can't be made without it\n"); }
+#ifdef __APPLE__
+        { char from[1300], to[1300]; snprintf(from, sizeof from, "%s/Frameworks", o->port_dir); snprintf(to, sizeof to, "%s/Frameworks", o->dst);
+          if (is_dir(from)) { say("SDL (Frameworks)...\n"); int k = put_links_tree(from, to); n_copied += k; say("  %d files\n", k); } }
+#endif
     }
 
 imports:

@@ -79,6 +79,13 @@ if(PLATFORM STREQUAL "windows")
     string(APPEND LK "{kit}/lib/${n}\n")
   endif()
   string(APPEND LK "-luser32\n-Wl,--subsystem,windows\n-Wl,--stack,67108864\n")
+elseif(PLATFORM STREQUAL "mac" AND MACFW)
+  # the SDL project's frameworks, shipped in Frameworks/ next to cm9798 (setup copies them into the game
+  # folder); the game, in build/, finds them in the folder above
+  file(COPY ${SRC}/Frameworks/SDL2.framework ${SRC}/Frameworks/SDL2_ttf.framework DESTINATION ${OUT}/Frameworks)
+  string(APPEND LK "-F{kit}/../Frameworks\n-framework\nSDL2\n-framework\nSDL2_ttf\n-Wl,-rpath,@executable_path/../Frameworks\n")
+  string(APPEND LK "-lm\n-Wl,-stack_size,0x4000000\n")
+  message(STATUS "release: SDL2.framework and SDL2_ttf.framework included (no Homebrew needed)")
 elseif(PLATFORM STREQUAL "mac")
   string(APPEND LK "{find:libSDL2-2.0.0.dylib|libSDL2.dylib}\n")
   if(TTF)
