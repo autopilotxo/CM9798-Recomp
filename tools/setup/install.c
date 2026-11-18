@@ -152,6 +152,7 @@ static int put_kit(const char *from, const char *to) {
 
 #ifdef __APPLE__
 #include <unistd.h>
+#include <sys/wait.h>
 /* macOS: the SDL frameworks (Frameworks/SDL2.framework, SDL2_ttf.framework) next to the programs: copied
    with their symbolic links (Versions/Current and the rest) kept as links */
 static int put_links_tree(const char *from, const char *to) {
@@ -475,6 +476,12 @@ int install_run(const struct install_opts *o, install_log_fn log) {
 #ifdef __APPLE__
         { char from[1300], to[1300]; snprintf(from, sizeof from, "%s/Frameworks", o->port_dir); snprintf(to, sizeof to, "%s/Frameworks", o->dst);
           if (is_dir(from)) { say("SDL (Frameworks)...\n"); int k = put_links_tree(from, to); n_copied += k; say("  %d files\n", k); } }
+        /* this program was opened from a download, so macOS marks what it writes as downloaded too, and
+           would stop the launcher, the compiler and the game it makes ("killed"): clear the mark */
+        { char *v[] = { "/usr/bin/xattr", "-dr", "com.apple.quarantine", (char *)o->dst, NULL };
+          pid_t pid = fork();
+          if (pid == 0) { execv(v[0], v); _exit(127); }
+          if (pid > 0) { int st; waitpid(pid, &st, 0); } }
 #endif
     }
 

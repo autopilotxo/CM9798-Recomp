@@ -386,15 +386,23 @@ static void unpack_compiler(void) {
     }
     if (d) closedir(d);
     if (!top[0] || rename(top, zig)) { logf_("couldn't put the compiler in %s\n", zig); return; }
-#ifdef __APPLE__
-    /* files unpacked from a download are marked as such, and macOS stops programs marked that way that
-       aren't signed by a known developer: unmark the compiler (it came with the game, which the player
-       chose to run) */
-    if (is_file("/usr/bin/xattr")) { char *x[] = { "/usr/bin/xattr", "-dr", "com.apple.quarantine", zig, NULL }; run_wait(x, 150, "Unpacking the compiler (once)"); }
-#endif
 }
 
 static void tidy_kit(void);
+/* macOS marks files from a download (and files written by a program opened from one) as quarantined,
+   and stops marked programs that aren't signed by a registered developer at once, with no message
+   ("killed"): the compiler, the game made with it, the SDL frameworks. The player chose to run the game,
+   so the mark is cleared from what it uses: the build kit, the Frameworks folder and the game itself. */
+static void unquarantine(void) {
+#ifdef __APPLE__
+    if (!is_file("/usr/bin/xattr")) return;
+    char fw[1300]; snprintf(fw, sizeof fw, "%s/Frameworks", progdir);
+    char *v[] = { "/usr/bin/xattr", "-dr", "com.apple.quarantine", kit, is_dir(fw) ? fw : NULL, NULL };
+    proc_t p; int st;
+    if (spawn(v, 1, &p) == 0) while (!poll_proc(p, &st)) nap();
+#endif
+}
+
 static void cmgen_cb(int pm, const char *what, void *ctx) { (void)ctx; ui_progress(pm * 15 / 100, what); }  /* 0..15% */
 
 typedef struct { char path[1400]; long size; } src_t;
@@ -421,6 +429,7 @@ static int build(const char *exe, char *err, size_t errn) {
         if (!r) { char z[1300]; snprintf(z, sizeof z, "%s/zig/zig" EXE, kit); arg(&cc, z); arg(&cc, "cc"); }
     }
     if ((strchr(cc.v[0], '/') || strchr(cc.v[0], '\\')) && !is_file(cc.v[0])) unpack_compiler();
+    unquarantine();
     if ((strchr(cc.v[0], '/') || strchr(cc.v[0], '\\')) && !is_file(cc.v[0])) {
 #ifndef _WIN32
         /* no bundled compiler (a smaller download): use the system's own C compiler, if it has one */
@@ -640,6 +649,7 @@ int main(int argc, char **argv) {
         ui_close();
     }
 run:
+    if (is_dir(kit)) unquarantine();
     /* started without a game folder: start the game in this program's folder (the game folder), as the
        game itself looks for CM2E16.EXE where it's started and next to itself */
     {
