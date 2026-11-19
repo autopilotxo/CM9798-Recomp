@@ -318,6 +318,25 @@ void hook_load_more_tables(void) {
     guest_file_io(GAME_FREAD, 0x1037BB1u, MORE_TABLES, MORE_BYTES, ebp);
 }
 
+/* ---- human managers 17-32 (relocations.txt: the table of human managers, 0x11FB bytes each, moved to
+ * HUMANS for 32) ----
+ * MGDATA ends with the game's own 16 (0x11FB0 bytes, read and written by the game, now from HUMANS); the
+ * other 16 are written after them. A save from before has none: they are left empty. */
+#define HUMANS        0x05700000u
+#define HUMAN_SIZE    0x11FBu
+#define HUMANS_OLD    16u
+#define HUMANS_EXTRA  (HUMANS + HUMANS_OLD * HUMAN_SIZE)
+#define HUMANS_XBYTES (16u * HUMAN_SIZE)
+#define HUMANS_READ   0x05730000u                /* the extra 16 as read, before they are kept */
+void hook_save_humans(void) { guest_file_io(GAME_FWRITE, 0x103BC01u, HUMANS_EXTRA, HUMANS_XBYTES, esi); }
+void hook_load_humans(void) {                    /* eax: the game's read of the first 16 (1 = there) */
+    if (eax != 1) return;
+    memset(M + HUMANS_EXTRA, 0, HUMANS_XBYTES);
+    memset(M + HUMANS_READ, 0, HUMANS_XBYTES);
+    if (guest_file_io(GAME_FREAD, 0x103BAE5u, HUMANS_READ, HUMANS_XBYTES, RD32(esp + 0x2FCu)) == 1)
+        memcpy(M + HUMANS_EXTRA, M + HUMANS_READ, HUMANS_XBYTES);
+}
+
 /* ---- the competition calendar, for 128 competitions (relocations.txt, patches.txt 036e9d...) ----
  * [32 days][13 months][128 competitions] at CAL_BASE; the game's saves have [32][13][50]. */
 #define CAL_BASE      0x04040000u
