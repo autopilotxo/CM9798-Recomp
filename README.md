@@ -35,6 +35,7 @@ with an Apple developer certificate).
 - Native 64-bit build.
 - Windowed and Fullscreen modes.
 - Up to 9 playable leagues at once, as opposed to the original maximum of 3.
+- Up to 32 human managers in one game (hot seat), as opposed to the original maximum of 16.
 - Import CM2 databases, including expansion packs, 96/97 data, pictures and sounds.
 - Selectable databases so you can play all 3 data sets on one executable.
 - Autosave, and save backups.

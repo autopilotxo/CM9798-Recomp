@@ -172,3 +172,8 @@
 05d44d after hook_crowd_stop();
 05d4e5 after hook_crowd_stop();
 05d73a after hook_commentary_event();
+
+# Human managers 17-32 (relocations.txt): MGDATA saves the table of 16 at the end (0x3bae0 reads it,
+# 0x3bbfc writes it); the other 16 follow it, when the file has them (overrides.c)
+03bae0 after hook_load_humans();
+03bbfc after hook_save_humans();

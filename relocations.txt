@@ -228,3 +228,19 @@ imm 0x01047d6a 0x9c40 0xfa00
 # bytes in mchfax; 7000 a season in the original, and nine leagues play about 8600 league games alone
 imm 0x01053e53 0x1b58 0x3e80       # playfix 1: no id left
 imm 0x0103bdd3 0x1b57 0x3e7f       # the empty mchfax file has a record for every id
+
+# Human managers (hot seat): 32 instead of 16. Each has a 0x11FB-byte block (its manager, and two
+# bytes for every club) in a table of 16 at 0x118BBC8, read through 0x118BBC6 (a dword, the manager
+# number in its top half) as well; it moves to room for 32 at 0x5700000. 0x119DB77 on is the next table.
+move 0x0118bbc6 0x0119db77 0x056ffffe
+imm 0x0104668a 0xf 0x1f            # adding a human: room while there are no more than 31
+imm 0x01046aa5 0x10 0x20           # "A maximum of thirty-two people are allowed to participate..."
+imm 0x010758dd 0x10 0x20           # a club's screen: "Player #n" while fewer than 32
+# Every human is also a manager, after the database's (about 380): the table of 400 managers (0x27 bytes
+# each, at 0x11EFDB0, with another table straight after it) moves to room for 432 at 0x5760000, and so
+# does the limit; the news file gets a record for each of the 432
+move 0x011efdb0 0x011efe00 0x05760000
+imm 0x0104669c 0x18f 0x1af         # adding a human: "There is no space to add any more managers."
+imm 0x010758ce 0x190 0x1b0         # a club's screen: "Player #n" while there is room
+imm 0x0103b66f 0x190 0x1b0         # the managers are full
+imm 0x0103c7e3 0x18f 0x1af         # a new game's news file: a record for every manager

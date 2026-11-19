@@ -23,6 +23,7 @@ void hook_leagues_message(void);  /* patches.txt, rt/ */
 void hook_load_calendar(void);  /* patches.txt, rt/ */
 void hook_load_club_comps(void);  /* patches.txt, rt/ */
 void hook_load_fixtures(void);  /* patches.txt, rt/ */
+void hook_load_humans(void);  /* patches.txt, rt/ */
 void hook_load_more_tables(void);  /* patches.txt, rt/ */
 void hook_load_tmdata_begin(void);  /* patches.txt, rt/ */
 void hook_match_speed_kickoff(void);  /* patches.txt, rt/ */
@@ -30,6 +31,7 @@ void hook_match_speed_toggled(void);  /* patches.txt, rt/ */
 void hook_options_choice(void);  /* patches.txt, rt/ */
 void hook_player_position(void);  /* patches.txt, rt/ */
 void hook_save_calendar(void);  /* patches.txt, rt/ */
+void hook_save_humans(void);  /* patches.txt, rt/ */
 void hook_save_club_comps(void);  /* patches.txt, rt/ */
 void hook_save_more_tables(void);  /* patches.txt, rt/ */
 void hook_save_tmdata_begin(void);  /* patches.txt, rt/ */
