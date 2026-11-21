@@ -38,6 +38,7 @@ struct tglyph g_glyphs[MAX_GLYPHS];
 static uint8_t snaps[MAX_GLYPHS][CELL_MAX];
 static uint8_t inkmask[MAX_GLYPHS][CELL_MAX];
 static uint32_t seen[MAX_GLYPHS];
+static uint32_t callid[MAX_GLYPHS], calls;          /* which call of the text routine drew it */
 int g_nglyphs;
 static int row_head[SH], row_next[MAX_GLYPHS];   /* glyphs by top row, for same-line replacement */
 static int rows_ready;
@@ -83,7 +84,7 @@ static void compact(void) {
         struct tglyph *g = &g_glyphs[i];
         if (!g->live || (g->live == 2 && present_no - seen[i] > STALE_PRESENTS)) continue;
         if (n != i) {
-            g_glyphs[n] = *g; seen[n] = seen[i];
+            g_glyphs[n] = *g; seen[n] = seen[i]; callid[n] = callid[i];
             memcpy(snaps[n], snaps[i], (size_t)g->w * g->h); memcpy(inkmask[n], inkmask[i], (size_t)g->w * g->h);
         }
         n++;
@@ -112,7 +113,7 @@ void hook_text_glyph(void) {
     g->x = (int16_t)x; g->y = (int16_t)y; g->w = (uint8_t)w; g->h = (uint8_t)h;
     g->ch = (uint8_t)ch; g->font = (uint8_t)font; g->colour = (uint8_t)RD8(TXT_COLOUR);
     g->live = 1;
-    seen[i] = present_no;
+    seen[i] = present_no; callid[i] = calls;
     row_next[i] = row_head[y]; row_head[y] = i;
 }
 
@@ -123,7 +124,7 @@ void text_call_begin(void) {
     /* only text drawn into the full-screen buffer maps to screen positions */
     recording = call_buf != 0 && call_buf + SW * SH <= 0x4000000u;
     if (recording && g_nglyphs > MAX_GLYPHS * 3 / 4) compact();
-    call_first = g_nglyphs;
+    call_first = g_nglyphs; calls++;
 }
 void text_call_end(void) {
     if (!recording) return;
@@ -166,11 +167,34 @@ static int match_at(int i, const uint8_t *screen, int stride, int dx, int dy) {
 }
 
 /* Letters to redraw this frame, oldest first (so text is drawn over its own shadow).
-   Also fills g_text_cover with the ink of every letter returned. */
+   Also fills g_text_cover with the ink of every letter returned.
+   A letter that isn't where it was drawn may have moved with its picture (a held button is copied
+   2 pixels right and down), so the nearest positions are tried too. But a thin letter ("I", "t",
+   "(") also matches some other stroke a pixel or two away, and a sharp copy drawn there is stray
+   text on screen (a second, offset shadow behind a team name). So a moved letter counts only if:
+   no newer letter covering it is still in place (a shadow stays under its text), and the other
+   letters drawn with it (the same word) moved the same way - none in place, and at least one
+   other alike, unless it is the only letter. */
+static uint8_t in_place[SH][SW];
+static void mark(uint8_t m[SH][SW], int i, int dx, int dy) {
+    struct tglyph *g = &g_glyphs[i];
+    for (int y = 0; y < g->h; y++) for (int x = 0; x < g->w; x++)
+        if (inkmask[i][y * g->w + x]) {
+            int X = g->x + dx + x, Y = g->y + dy + y;
+            if (X >= 0 && X < SW && Y >= 0 && Y < SH) m[Y][X] = 1;
+        }
+}
+static int under_placed(int i) {          /* does a newer letter still in place cover part of its cell? */
+    struct tglyph *g = &g_glyphs[i];
+    for (int y = g->by0; y <= g->by1; y++) for (int x = g->bx0; x <= g->bx1; x++)
+        if (in_place[g->y + y][g->x + x]) return 1;
+    return 0;
+}
 int text_visible(const uint8_t *screen, int stride, int w, int h, int *out, int max) {
     present_no++;
     if (w != SW || h != SH) return 0;
     memset(g_text_cover, 0, sizeof g_text_cover);
+    memset(in_place, 0, sizeof in_place);
     int n = 0;
     for (int i = g_nglyphs - 1; i >= 0 && n < max; i--) {        /* newest first */
         struct tglyph *g = &g_glyphs[i];
@@ -178,7 +202,7 @@ int text_visible(const uint8_t *screen, int stride, int w, int h, int *out, int 
         int dx = 0, dy = 0, ok = match_at(i, screen, stride, 0, 0);
         /* not where it was drawn: the game may have moved the picture under it (held button);
            search outwards, nearest positions first */
-        if (!ok && present_no - seen[i] <= SHIFT_RECENT)
+        if (!ok && present_no - seen[i] <= SHIFT_RECENT && !under_placed(i))
             for (int r = 1; r <= SHIFT_MAX && !ok; r++)
                 for (int ty = -r; ty <= r && !ok; ty++)
                     for (int tx = -r; tx <= r && !ok; tx++)
@@ -186,15 +210,36 @@ int text_visible(const uint8_t *screen, int stride, int w, int h, int *out, int 
                             ok = 1; dx = tx; dy = ty;
                         }
         if (!ok) continue;
-        seen[i] = present_no;
         g_text_dx[i] = (int8_t)dx; g_text_dy[i] = (int8_t)dy;
-        for (int y = 0; y < g->h; y++) for (int x = 0; x < g->w; x++)
-            if (inkmask[i][y * g->w + x]) {
-                int X = g->x + dx + x, Y = g->y + dy + y;
-                if (X >= 0 && X < SW && Y >= 0 && Y < SH) g_text_cover[Y][X] = 1;
-            }
+        if (!dx && !dy) mark(in_place, i, 0, 0);
+        mark(g_text_cover, i, dx, dy);
         out[n++] = i;
     }
+    /* moved letters must agree with the rest of their word (a call's letters are next to each other) */
+    int kept = 0, dropped = 0;
+    for (int a = 0; a < n; ) {
+        int b = a; while (b < n && callid[out[b]] == callid[out[a]]) b++;
+        int all = 0;                                              /* the call's letters still recorded */
+        for (int i = out[a]; i >= 0 && callid[i] == callid[out[a]]; i--) if (g_glyphs[i].live == 2) all++;
+        for (int i = out[a] + 1; i < g_nglyphs && callid[i] == callid[out[a]]; i++) if (g_glyphs[i].live == 2) all++;
+        int placed = 0;
+        for (int k = a; k < b; k++) if (!g_text_dx[out[k]] && !g_text_dy[out[k]]) placed++;
+        for (int k = a; k < b; k++) {
+            int i = out[k], dx = g_text_dx[i], dy = g_text_dy[i], alike = 0;
+            if (dx || dy) {
+                for (int q = a; q < b; q++) if (g_text_dx[out[q]] == dx && g_text_dy[out[q]] == dy) alike++;
+                if (placed || (alike < 2 && all > 1)) { dropped++; continue; }
+            }
+            out[kept++] = i;
+        }
+        a = b;
+    }
+    n = kept;
+    if (dropped) {                                                /* the cover without them */
+        memset(g_text_cover, 0, sizeof g_text_cover);
+        for (int k = 0; k < n; k++) mark(g_text_cover, out[k], g_text_dx[out[k]], g_text_dy[out[k]]);
+    }
+    for (int k = 0; k < n; k++) seen[out[k]] = present_no;
     for (int a = 0, b = n - 1; a < b; a++, b--) { int t = out[a]; out[a] = out[b]; out[b] = t; }
     return n;
 }
