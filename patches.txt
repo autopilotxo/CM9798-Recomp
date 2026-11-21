@@ -177,3 +177,39 @@
 # 0x3bbfc writes it); the other 16 follow it, when the file has them (overrides.c)
 03bae0 after hook_load_humans();
 03bbfc after hook_save_humans();
+
+# ---- International competitions (rt/intl.c) ----
+# The four-year cycle (0x3296c: (season - 94) mod 4) used a signed divide: negative before 1994.
+0329bb replace hook_cycle_divide();
+# Euro 96 in a career that starts in 1995, the way Championship Manager 2 did it (rt/intl.c).
+# The qualifiers' daily routine (0x98140). On the first day the draw's tests (the cycle's last year,
+# 1 February) pass, and the draw has 48 places in 8 groups (CM2's), the host is England, the top
+# two of a group are shown as qualifying, and the weakest are left out until 48 are left.
+09816c replace { uint32_t a_=eax,b_=ecq_first_day()?eax:0x3u,r_; r_=(a_-b_)&0xFFFFFFFFu; cf=a_<b_; of=MSB(32,(a_^b_)&(a_^r_)); SZF(32,r_);  }
+09817c replace { uint32_t a_=eax,b_=ecq_first_day()?eax:0x1u,r_; r_=(a_-b_)&0xFFFFFFFFu; cf=a_<b_; of=MSB(32,(a_^b_)&(a_^r_)); SZF(32,r_);  }
+09818c replace { uint32_t a_=eax,b_=ecq_first_day()?eax:0x2u,r_; r_=(a_-b_)&0xFFFFFFFFu; cf=a_<b_; of=MSB(32,(a_^b_)&(a_^r_)); SZF(32,r_);  }
+0981b1 replace eax = ecq_draw_places();
+0981f2 replace WR8((uint32_t)(0x4000006u+edx), ecq_two_places() ? 2u : ((eax>>8)&0xFFu));
+098287 replace { hook_ecq_entrants(); SET8L(edx,RD8((uint32_t)(0x10u+esp))); }
+09828b replace edi = ecq_draw_places();
+# ... the groups aren't sorted by name, nor the draw put in the news, on the first day (CM2 0x808ec)
+0984dd replace hook_ecq_sort_by_name();
+0984ea replace hook_ecq_draw_news();
+# ... the first seven rounds are played at once, and the rest get CM2's dates
+098554 replace edx = ecq_round_dates();
+09855c after hook_ecq_dates();
+# ... when the groups are over, the two worst runners-up go to the play-off (97/98: three are out)
+098b33 replace WR8((uint32_t)(0x58u+esp), ecq_third_worst() ? (eax&0xFFu) : RD8((uint32_t)(0x58u+esp)));
+098bb4 replace hook_ecq_worst_runner_up();
+# The play-off, CM2's Euro Championship Qualifying Playoff: made at new game after all the other
+# competitions (0x37238: the making starts at 037257, and they are all there at 037bb8), run each day
+# after the qualifiers; the finals take their teams once it's over.
+037257 after hook_comps_begin();
+037bb8 replace { hook_comps_end(); eax=(uint32_t)(0x10e5f08u); }
+031ef0 after hook_eqp_daily();
+09752e replace eax = ecf_entry_source();
+# ... and the finals' dates are CM2's too
+0974d2 after hook_ecf_dates();
+# After a final the next host comes from a list that starts with 2002; a final before 1998 read in
+# front of it.
+03270a replace eax = next_host_name();

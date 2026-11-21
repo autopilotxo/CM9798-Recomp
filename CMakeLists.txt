@@ -49,7 +49,7 @@ endif()
 
 file(GLOB GEN_SOURCES ${CMAKE_SOURCE_DIR}/gen/*.c)
 set(RT_SOURCES
-  rt/rt.c rt/dos.c rt/video.c rt/input.c rt/le_load.c rt/main.c rt/overrides.c rt/textlayer.c rt/backup.c rt/autosave.c rt/database.c rt/stars.c rt/sound.c)
+  rt/rt.c rt/dos.c rt/video.c rt/input.c rt/le_load.c rt/main.c rt/overrides.c rt/textlayer.c rt/backup.c rt/autosave.c rt/database.c rt/stars.c rt/sound.c rt/intl.c)
 
 if(CM_HEADLESS)
   list(APPEND RT_SOURCES rt/headless.c)
