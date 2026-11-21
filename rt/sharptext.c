@@ -185,6 +185,11 @@ static int vis[8192], nvis;
 
 static int drawable(int font) { int b; return ready && font >= 0 && font < NFONTS && font_path(font, &b); }
 
+/* The letters' original pixels are filled in from the background around them: the nearest pixel
+   that isn't a letter's, left, right, up and down, blended by nearness. (Copying just the nearest
+   one along the row smeared whatever was beside a letter across it: a light pixel of the stadium
+   next to a black shadow became a white line the shape of the shadow's stroke, showing wherever
+   the TrueType letter doesn't cover the old one exactly.) */
 void sharp_erase(uint32_t *rgb, const uint8_t *p, int w, int h, int st, const uint32_t lut[256]) {
     nvis = 0;
     if (!ready) return;
@@ -195,17 +200,22 @@ void sharp_erase(uint32_t *rgb, const uint8_t *p, int w, int h, int st, const ui
         vis[nvis++] = vis[k];
         for (int y = 0; y < g->h; y++) for (int x = 0; x < g->w; x++) {
             if (!text_is_ink(vis[k], x, y)) continue;
-            int sx = g->x + g_text_dx[vis[k]] + x, sy = g->y + g_text_dy[vis[k]] + y, bx = -1, by = -1;
+            int sx = g->x + g_text_dx[vis[k]] + x, sy = g->y + g_text_dy[vis[k]] + y;
             if (sx < 0 || sx >= w || sy < 0 || sy >= h) continue;
-            for (int d = 1; d <= g->w + 2 && bx < 0; d++) {               /* nearest background in the row */
-                if (sx - d >= 0 && !g_text_cover[sy][sx - d]) { bx = sx - d; by = sy; }
-                else if (sx + d < w && !g_text_cover[sy][sx + d]) { bx = sx + d; by = sy; }
+            static const int dir[4][2] = { { -1, 0 }, { 1, 0 }, { 0, -1 }, { 0, 1 } };
+            float r = 0, gr = 0, b = 0, wt = 0;
+            for (int d4 = 0; d4 < 4; d4++) {
+                int lim = dir[d4][0] ? g->w + 2 : g->h + 2;
+                for (int d = 1; d <= lim; d++) {
+                    int bx = sx + dir[d4][0] * d, by = sy + dir[d4][1] * d;
+                    if (bx < 0 || bx >= w || by < 0 || by >= h) break;
+                    if (g_text_cover[by][bx]) continue;
+                    uint32_t c = lut[p[by * st + bx]]; float f = 1.0f / (float)d;
+                    r += f * (float)((c >> 16) & 255); gr += f * (float)((c >> 8) & 255); b += f * (float)(c & 255); wt += f;
+                    break;
+                }
             }
-            for (int d = 1; d <= g->h + 2 && bx < 0; d++) {               /* ... or the column */
-                if (sy - d >= 0 && !g_text_cover[sy - d][sx]) { bx = sx; by = sy - d; }
-                else if (sy + d < h && !g_text_cover[sy + d][sx]) { bx = sx; by = sy + d; }
-            }
-            if (bx >= 0) rgb[sy * w + sx] = lut[p[by * st + bx]];
+            if (wt > 0) rgb[sy * w + sx] = (rgb[sy * w + sx] & 0xFF000000u) | ((uint32_t)(r / wt + 0.5f) << 16) | ((uint32_t)(gr / wt + 0.5f) << 8) | (uint32_t)(b / wt + 0.5f);
         }
     }
 }

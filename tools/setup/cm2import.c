@@ -665,27 +665,34 @@ int cm2_import(const char *cm2, const char *game, const char *pictures_from, con
         gets_(&t7, db_rec(&t7, i), "Nation", nat7[i], 40);
     }
     int matched = 0, renamed = 0, added = 0, skipped = 0;
-    /* two rounds, so a close spelling can't take a club that has an exact match ("Olympique Alès"
-       is close to "Olympique Lyonnais", which the real Lyon needs) */
+    /* three rounds: the same name in the same country first, for every club; then the same name in
+       another country; then a close spelling in the same country. So an exact match always wins over
+       a close spelling ("Olympique Alès" is close to "Olympique Lyonnais", which the real Lyon needs),
+       and a club in its own country over a namesake elsewhere: CM2's English edition has a "Rio Ave"
+       in Cameroon, a "Hercules" in Croatia and a "Salamanca" in Peru, which took 97/98's Portuguese and
+       Spanish clubs from the league editions' own (then added again under the same name, players and
+       manager going to the first, so the league club had none). */
     for (int j = 0; j < t2.n; j++) match[j] = -1;
-    for (int round = 0; round < 2; round++)
+    for (int round = 0; round < 3; round++)
     for (int j = 0; j < t2.n; j++) {
         if (match[j] >= 0) continue;
         uint8_t *r = db_rec(&t2, j); char ln[64], sn[64], nt[40], a[64];
         gets_(&t2, r, "Long Name", ln, sizeof ln); gets_(&t2, r, "Short Name", sn, sizeof sn); gets_(&t2, r, "Nation", nt, sizeof nt);
         const char *nt7 = team_nation(nt);
         int m = -1;
-        if (round == 0) {
-            for (int i = 0; i < t7.n && m < 0; i++) { char s[64]; gets_(&t7, db_rec(&t7, i), "UK Long Name", s, sizeof s); if (!strcmp(s, ln) && !used[i]) m = i; }
-            for (int pass = 0; pass < 2 && m < 0; pass++) {          /* same name once spelled alike: same country first */
+        if (round < 2) {
+            int home = round == 0;                                /* round 0: same country only */
+            for (int i = 0; i < t7.n && m < 0; i++) {
+                if (used[i] || (home && strcmp(nat7[i], nt) && strcmp(nat7[i], nt7))) continue;
+                char s[64]; gets_(&t7, db_rec(&t7, i), "UK Long Name", s, sizeof s); if (!strcmp(s, ln)) m = i;
+            }
+            for (int pass = 0; pass < 2 && m < 0; pass++) {          /* same name once spelled alike */
                 norm(pass ? sn : ln, a, sizeof a); if (!a[0]) continue;
-                int any = -1;
                 for (int i = 0; i < t7.n; i++) {
                     if (used[i] || (strcmp(n7[i], a) && strcmp(n7s[i], a))) continue;
-                    if (!strcmp(nat7[i], nt) || !strcmp(nat7[i], nt7)) { m = i; break; }
-                    if (any < 0) any = i;
+                    if (home && strcmp(nat7[i], nt) && strcmp(nat7[i], nt7)) continue;
+                    m = i; break;
                 }
-                if (m < 0) m = any;
             }
         } else {                                                  /* close spelling, same country */
             norm(ln, a, sizeof a); double best = 0.75;
