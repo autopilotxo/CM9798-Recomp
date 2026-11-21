@@ -102,6 +102,11 @@ endif()
 file(WRITE ${K}/link.txt "${LK}")
 
 if(ZIG)
+  if(NOT EXISTS ${ZIG})
+    # (in the MSYS2 terminal an unquoted C:\Zig\zig.zip loses its backslashes: C:Zigzig.zip)
+    message(FATAL_ERROR "CM_ZIG=${ZIG} doesn't exist, so the release would have no compiler. Give the "
+      "Zig download with forward slashes (-DCM_ZIG=/c/Zig/zig.zip) and configure again.")
+  endif()
   if(NOT IS_DIRECTORY ${ZIG} AND ZIG MATCHES "\\.(zip|tar\\.xz|tar\\.gz)$")
     # the archive as downloaded from ziglang.org: one file in the release; the launcher unpacks it
     string(REGEX MATCH "\\.(zip|tar\\.xz|tar\\.gz)$" EXT ${ZIG})

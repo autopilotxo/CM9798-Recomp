@@ -591,6 +591,52 @@ static void tidy_kit(void) {
     logf_("tidied the build folder (CM_KEEP_BUILD=1 keeps it)\n");
 }
 
+/* ---- databases imported before 1.05 ----
+ * The CM2 and 96/97 databases are made by cm9798setup from the player's own discs (databases/<folder>/,
+ * with a database.cfg starting "# made by the installer"). Before 1.05 the importer gave a few league
+ * clubs no players or manager (Rio Ave with the Portuguese edition, UD Salamanca and Hercules with the
+ * Spanish one). From 1.05 database.cfg says "importer = 1.05"; one made by the installer without it is
+ * older, and the player is asked to import it again - or told once and left alone ("Don't remind me"
+ * adds "importer = old" to its database.cfg). */
+static void check_databases(const char *game_dir) {
+    char dir[1400]; snprintf(dir, sizeof dir, "%s/databases", game_dir);
+    DIR *d = opendir(dir); if (!d) return;
+    char names[600] = "", cfgs[8][1500]; int n = 0; struct dirent *e;
+    while ((e = readdir(d)) && n < 8) {
+        if (e->d_name[0] == '.') continue;
+        char cfg[1500]; snprintf(cfg, sizeof cfg, "%s/%s/database.cfg", dir, e->d_name);
+        FILE *f = fopen(cfg, "r"); if (!f) continue;
+        char line[300], name[128] = ""; int installer = 0, marked = 0, first = 1;
+        while (fgets(line, sizeof line, f)) {
+            if (first && !strncmp(line, "# made by the installer", 23)) installer = 1;
+            first = 0;
+            char v[128];
+            if (sscanf(line, " importer = %127s", v) == 1) marked = 1;
+            else if (sscanf(line, " name = %127[^\r\n]", v) == 1) snprintf(name, sizeof name, "%s", v);
+        }
+        fclose(f);
+        if (!installer || marked) continue;
+        snprintf(cfgs[n++], sizeof cfgs[0], "%s", cfg);
+        size_t l = strlen(names); snprintf(names + l, sizeof names - l, "  - %s (databases/%s)\n", name[0] ? name : e->d_name, e->d_name);
+    }
+    closedir(d);
+    if (!n) return;
+    char msg[1600];
+    snprintf(msg, sizeof msg,
+             "%s imported by an older version of cm9798setup:\n\n%s\n"
+             "Version 1.05 fixes clubs that were left with no players or manager (Rio Ave, UD Salamanca, "
+             "Hercules). To get the fixes, run cm9798setup again and import %s again.\n\n"
+             "Careers already started keep the data they began with; new careers get the fixes.",
+             n > 1 ? "These databases were" : "This database was", names, n > 1 ? "them" : "it");
+    const SDL_MessageBoxButtonData buttons[] = {
+        { SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT | SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, 0, "OK" },
+        { 0, 1, "Don't remind me" } };
+    const SDL_MessageBoxData box = { SDL_MESSAGEBOX_WARNING, NULL, "CM 97/98 - database to import again", msg, 2, buttons, NULL };
+    int choice = 0;
+    if (SDL_ShowMessageBox(&box, &choice) == 0 && choice == 1)
+        for (int i = 0; i < n; i++) { FILE *f = fopen(cfgs[i], "a"); if (f) { fputs("\n# cm9798 was told not to ask for this one to be imported again\nimporter = old\n", f); fclose(f); } }
+}
+
 /* CM2E16.EXE: in the folder given on the command line, else here, else next to this program (as rt/main.c) */
 static int find_exe(const char *dir, char *out, size_t n) {
     const char *v[2] = { "CM2E16.EXE", "cm2e16.exe" };
@@ -650,6 +696,7 @@ int main(int argc, char **argv) {
     }
 run:
     if (is_dir(kit)) unquarantine();
+    check_databases(gamedir ? gamedir : progdir);
     /* started without a game folder: start the game in this program's folder (the game folder), as the
        game itself looks for CM2E16.EXE where it's started and next to itself */
     {

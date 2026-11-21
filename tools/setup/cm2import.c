@@ -979,6 +979,8 @@ int cm2_import(const char *cm2, const char *game, const char *pictures_from, con
     { FILE *f = fopen(q, "w"); if (!f) die("Can't write %s\n", q);
       fprintf(f, "# made by the installer from %s\nname = %s\n"
                  "# the day a new game starts\nstart = %s\n", sname, sname, sdate);
+      /* which importer made it: cm9798 asks for databases made before 1.05 to be imported again */
+      fprintf(f, "# the importer that made it (cm9798 asks for older ones to be imported again)\nimporter = 1.05\n");
       fprintf(f, "# leagues that can be chosen for a new game (the others are greyed out)\nleagues = english scottish");
       for (int a = 0; a < nadd; a++) fprintf(f, " %s", homes[add_home[a]].league);
       fprintf(f, "\n# match sounds: shared (the game folder's SOUNDS) | own (this folder's sounds folder, for a\n"
