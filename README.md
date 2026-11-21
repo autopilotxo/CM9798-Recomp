@@ -212,7 +212,7 @@ pictures, sounds, saves, and Microsoft fonts.
 
 ## Credits
 
-- **autopilotxo**: the project, its direction, testing on Windows, Linux and macOS, and the icons.
+- **Me**: the project, its direction, testing on Windows, Linux and macOS, and the icons.
 - **Claude** (Anthropic): developed with the help of Claude, which wrote much of the recompiler,
   runtime, launcher and setup code alongside the project's author.
 - **Sports Interactive** and **Eidos**: the original *Championship Manager 97/98*.
