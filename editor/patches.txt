@@ -26,3 +26,11 @@
 # list instead of typing the file's name. The text box (0x1B5E4, "ret 4") is replaced: the name
 # comes back in EAX as it did, and the box's Escape flag (0x10A89AF) says whether it was cancelled.
 010f67 replace eax = ed_pick_file(); esp += 4;
+
+# Save Database: no file name to type - it saves the file that was loaded (its name is at 0x1081328,
+# which the name box started with), after a Yes/No "Save all changes?" (the box that asked
+# "File already exists. Overwrite ?", now always asked: 0x23E00 is "does the file exist?").
+# With nothing loaded, the editor still says so itself.
+0117f4 replace eax = ed_save_name(); esp += 4;
+01185d replace eax = 1;
+01186b replace ebx = ed_text_save_question();

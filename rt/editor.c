@@ -16,7 +16,8 @@
  *
  * editor/patches.txt changes a few things, with the hooks below: sharp text (as in the game), one
  * click per action, "Back to main menu" in place of "Exit program", a line saying which database
- * is being edited, and Load Database as a choice of Players, Managers or Teams.
+ * is being edited, Load Database as a choice of Players, Managers or Teams, and Save Database as a
+ * Yes/No "Save all changes?" to the file that was loaded.
  */
 #include "rt_internal.h"
 #include "database.h"
@@ -75,11 +76,15 @@ void hook_ed_fresh_click(void) {
     while ((RD16(ED_BUTTONS) & 3) && host_ms() - t0 < 3000) { host_wait(); input_dispatch_mouse(); }
 }
 /* the texts: in free memory (they're longer than the originals), written when the editor starts */
-enum { T_BACK = 0, T_BACK_Q = 0x40, T_BACK_TITLE = 0x80, T_FILE = 0xC0, T_CAPTION = 0x100 };
+enum { T_BACK = 0, T_BACK_Q = 0x40, T_BACK_TITLE = 0x80, T_FILE = 0xC0, T_CAPTION = 0x100, T_SAVE_Q = 0x200 };
+#define ED_LOADED_NAME 0x01081328u   /* the name of the file that was loaded (Save's name box started with it) */
 static void put_text(uint32_t at, const char *s) { size_t n = strlen(s); memcpy(&M[ED_STRINGS + at], s, n + 1); }
 uint32_t ed_text_back(void) { return ED_STRINGS + T_BACK; }
 uint32_t ed_text_back_question(void) { return ED_STRINGS + T_BACK_Q; }
 uint32_t ed_text_back_title(void) { return ED_STRINGS + T_BACK_TITLE; }
+uint32_t ed_text_save_question(void) { return ED_STRINGS + T_SAVE_Q; }
+/* Save Database: the file that was loaded, with no box to type it in */
+uint32_t ed_save_name(void) { WR8(ED_CANCELLED, 0); return ED_LOADED_NAME; }
 /* call one of the editor's functions: EAX, EDX, EBX, ECX, then one value on the stack (or none);
    ret is the return site of a real call to it. Every register is kept. */
 static uint32_t call_editor(uint32_t fn, uint32_t ret, uint32_t a, uint32_t d, uint32_t b, uint32_t c, int push, uint32_t st) {
@@ -209,6 +214,7 @@ void host_database_editor(void) {
             put_text(T_BACK_Q, "Go back to the main menu?");
             put_text(T_BACK_TITLE, "Back to Main Menu");
             put_text(T_CAPTION, db_title);
+            put_text(T_SAVE_Q, "Save all changes?");
             gfn start = rt_lookup(ED_ENTRY);
             if (start && !setjmp(back_to_game)) {
                 esp = ED_STACK_TOP;
