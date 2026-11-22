@@ -317,6 +317,7 @@ int db_info(int i, const char **name, int *day, int *month, int *year) {
     *name = dbs[i].name; *day = dbs[i].day; *month = dbs[i].month; *year = dbs[i].start;
     return 1;
 }
+const char *db_folder(int i) { scan(); return i >= 0 && i < ndb ? dbs[i].dir : NULL; }
 void db_select(int i) {
     scan(); if (i < 0 || i >= ndb) return;
     sel = i; snprintf(choice, sizeof choice, "%s", dbs[sel].dir);

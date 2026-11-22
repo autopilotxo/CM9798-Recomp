@@ -149,3 +149,11 @@ void rm_interrupt(uint32_t n, uint32_t rr) {
 }
 
 uint32_t vbe_lfb_linear(void) { return WIN_LIN; }
+
+/* ---- state (rt_internal.h): the program's screen (mode, bank, the whole framebuffer) ---- */
+static const struct rt_var video_vars[] = {
+    { fb, sizeof fb }, { &cur_bank, sizeof cur_bank }, { &cur_mode, sizeof cur_mode }, { &width, sizeof width },
+    { &height, sizeof height }, { &pitch, sizeof pitch },
+};
+size_t video_state_size(void) { return rt_vars_size(video_vars, (int)(sizeof video_vars / sizeof video_vars[0])); }
+void video_state_swap(void *buf) { rt_vars_swap(video_vars, (int)(sizeof video_vars / sizeof video_vars[0]), buf); video_dirty = 1; }

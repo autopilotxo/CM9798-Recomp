@@ -58,7 +58,7 @@ endif()
 
 file(GLOB GEN_SOURCES ${CMAKE_SOURCE_DIR}/gen/*.c)
 set(RT_SOURCES
-  rt/rt.c rt/dos.c rt/video.c rt/input.c rt/le_load.c rt/main.c rt/overrides.c rt/textlayer.c rt/backup.c rt/autosave.c rt/database.c rt/stars.c rt/sound.c rt/intl.c)
+  rt/rt.c rt/dos.c rt/video.c rt/input.c rt/le_load.c rt/main.c rt/overrides.c rt/textlayer.c rt/backup.c rt/autosave.c rt/database.c rt/stars.c rt/sound.c rt/intl.c rt/editor.c rt/editor_none.c)
 
 if(CM_HEADLESS)
   list(APPEND RT_SOURCES rt/headless.c)
@@ -92,6 +92,7 @@ endif()
 
 # cmgen: CM2E16.EXE -> gen/ (the same as make_gen.py, without Python or binutils)
 #   cmgen <CM2E16.EXE> <folder with functions.json etc.> <gen folder>
+#   cmgen <CM2ED.EXE> editor <gen folder>   (the Database Editor, rt/editor.c: optional)
 set(CMGEN_SOURCES tools/cmgen/cmgen.c tools/cmgen/x86dis.c tools/cmgen/lift.c tools/cmgen/util.c)
 add_executable(cmgen ${CMGEN_SOURCES})
 set_property(TARGET cmgen PROPERTY C_STANDARD 11)

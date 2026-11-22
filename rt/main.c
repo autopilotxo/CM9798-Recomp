@@ -152,6 +152,7 @@ static void program_dir(char *out, size_t max) {
 
 const char *g_game_dir = ".";   /* folder with the game files (sharp text looks for fonts there) */
 int main(int argc, char **argv) {
+    editor_startup();                                             /* before anything changes (rt/editor.c) */
     if (argc > 1 && !strncmp(argv[1], "-psn", 4)) argc = 1;      /* macOS Finder's process id, not a folder */
     const char *game = argc > 1 ? argv[1] : ".";
     /* Started without a folder from somewhere else (double-clicked in the Finder or a file manager,

@@ -1,12 +1,14 @@
 /* launcher.c - cm9798: the program players start. The game's code isn't distributed: the first time
  * it runs (and again after the port is updated), this makes it on the player's own machine from their
  * own CM2E16.EXE, then starts it:
- *   1. tools/cmgen turns CM2E16.EXE into C (gen/), exactly as make_gen.py does,
+ *   1. tools/cmgen turns CM2E16.EXE into C (gen/), exactly as make_gen.py does - and, when CM2ED.EXE (the
+ *      data editor that came with the game) is next to it, that too (gen/ed_*.c: the Database Editor),
  *   2. the bundled C compiler (build/zig) compiles that,
  *   3. and links it with the port's own code (build/lib/libcm9798rt.a) into build/cm9798-game(.exe),
  *      which it then starts from the game folder (so players only see cm9798 and cm9798setup).
  * Everything it needs is in the build folder next to it:
  *   build/data/       functions.json, labels.csv, patches.txt, overrides.txt, relocations.txt
+ *   build/data/editor/  the same for CM2ED.EXE
  *   build/include/    rt.h, rt_internal.h (what the generated C includes)
  *   build/lib/        libcm9798rt.a (+ on Windows the SDL import libraries and the icon)
  *   build/compiler.txt, cflags.txt, link.txt   one argument per line; {kit} = the build folder,
@@ -368,7 +370,8 @@ static void make_stamp(char *out, size_t n) {
     char p[1400]; uint32_t c = 0;
     c = crc_update(c, (const unsigned char *)LAUNCHER_VERSION, strlen(LAUNCHER_VERSION));
     snprintf(p, sizeof p, "%s/lib/libcm9798rt.a", kit); c = crc_file(c, p);
-    for (int i = 0; data_files[i]; i++) { snprintf(p, sizeof p, "%s/data/%s", kit, data_files[i]); c = crc_file(c, p); }
+    for (int i = 0; data_files[i]; i++) { snprintf(p, sizeof p, "%s/data/%s", kit, data_files[i]); c = crc_file(c, p);
+                                          snprintf(p, sizeof p, "%s/data/editor/%s", kit, data_files[i]); c = crc_file(c, p); }
     const char *t[] = { "compiler.txt", "cflags.txt", "link.txt", NULL };
     for (int i = 0; t[i]; i++) { snprintf(p, sizeof p, "%s/%s", kit, t[i]); c = crc_file(c, p); }
     snprintf(out, n, "cm9798 %s %08x\n", LAUNCHER_VERSION, c);
@@ -445,6 +448,26 @@ static int build(const char *exe, char *err, size_t errn) {
     /* 1. CM2E16.EXE -> C */
     char data[1300]; snprintf(data, sizeof data, "%s/data", kit);
     if (cmgen_run(exe, data, gen, cmgen_cb, NULL, err, errn)) { logf_("%s\n", err); return -1; }
+    /* ...and the Database Editor, from CM2ED.EXE next to it (rt/editor.c). Without it - or if it's
+       another version - the game is made without the editor (the Options screen leaves it out). */
+    {
+        char edexe[1400], eddata[1350], ederr[600] = ""; int made = 0;
+        snprintf(edexe, sizeof edexe, "%s", exe);
+        char *s1 = strrchr(edexe, '/'), *s2 = strrchr(edexe, '\\'), *s = s1 > s2 ? s1 : s2;
+        snprintf(eddata, sizeof eddata, "%s/data/editor", kit);
+        for (int v = 0; v < 2 && !made; v++) {
+            if (s) snprintf(s + 1, sizeof edexe - (size_t)(s + 1 - edexe), "%s", v ? "cm2ed.exe" : "CM2ED.EXE");
+            else snprintf(edexe, sizeof edexe, "%s", v ? "cm2ed.exe" : "CM2ED.EXE");
+            if (!is_file(edexe)) continue;
+            if (cmgen_run(edexe, eddata, gen, cmgen_cb, NULL, ederr, sizeof ederr)) logf_("the Database Editor isn't included: %s\n", ederr);
+            else { made = 1; logf_("the Database Editor is included (%s)\n", edexe); }
+        }
+        if (!made) {                                  /* none of its files from an earlier build */
+            char p[1500]; const char *fixed[] = { "edfuncs.h", "edtable.c", "edretsites.c", NULL };
+            for (int i = 0; fixed[i]; i++) { snprintf(p, sizeof p, "%s/%s", gen, fixed[i]); remove(p); }
+            for (int i = 0; i < 100; i++) { snprintf(p, sizeof p, "%s/ed_%03d.c", gen, i); remove(p); }
+        }
+    }
 
     /* 2. compile */
     args_t cc = {0}, cfl = {0}, lnk = {0};

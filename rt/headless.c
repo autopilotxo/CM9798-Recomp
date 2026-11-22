@@ -298,3 +298,6 @@ void host_restore_backup(void) {
 
 /* Change Database (overrides.c): no panel without a window; the next database, as before */
 int host_choose_database(void) { if (db_count() < 2) return 0; db_next(); return 1; }
+/* Database Editor: CM_EDIT_DB=<number> (default: the one chosen for the game); "cancel" = none */
+int host_pick_database(void) { const char *e = getenv("CM_EDIT_DB"); if (e && !strcmp(e, "cancel")) return -1;
+    return e ? atoi(e) : db_selected(); }

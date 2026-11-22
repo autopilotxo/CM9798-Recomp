@@ -827,6 +827,7 @@ static void dbp_date(int i, char *out, size_t n) {   /* "Wednesday 16th July 199
     const char *suf = (d % 100 >= 11 && d % 100 <= 13) ? "th" : d % 10 == 1 ? "st" : d % 10 == 2 ? "nd" : d % 10 == 3 ? "rd" : "th";
     snprintf(out, n, "%s %d%s %s %d", wd[(h + 6) % 7], d, suf, mo[m - 1], y);
 }
+static const char *dbp_title = "Choose Database", *dbp_choose = "Choose";
 static void dbp_draw(float k, int ox, int oy, int pw, int ph) {
     mk = k; mox = ox; moy = oy;
     SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
@@ -838,7 +839,7 @@ static void dbp_draw(float k, int ox, int oy, int pw, int ph) {
     mfill(DB_X0 + 1, Y0 + 1, W - 2, H - 2, 52, 52, 52, 245);
     mfill(DB_X0 + 1, Y0 + 1, W - 2, 33, 0, 72, 0, 255);
     mfill(DB_X0 + 1, Y0 + 34, W - 2, 1, 0, 0, 0, 255);
-    mtext("Choose Database", DB_X0, Y0, W, 35, 19, yellow, 1, 1, 1);
+    mtext(dbp_title, DB_X0, Y0, W, 35, 19, yellow, 1, 1, 1);
     mtext("Database", DB_X0 + 22, Y0 + 52, 200, 15, 9, grey, 1, 0, 0);
     mtext("First day of a new game", DB_X0 + 22 + 220, Y0 + 52, 200, 15, 9, grey, 1, 0, 0);
     mfill(DB_X0 + 16, Y0 + 70, W - 32, 1, 110, 110, 110, 255);
@@ -860,14 +861,15 @@ static void dbp_draw(float k, int ox, int oy, int pw, int ph) {
     for (int i = 0; i < 2; i++) {
         SDL_Rect b = dbp_btn(i);
         mbevel(b, in_rect(b, bk_mx, bk_my) ? 120 : 100);
-        mtext(i ? "Cancel" : "Choose", b.x, b.y, b.w, b.h, 13, white, 0, 1, 1);
+        mtext(i ? "Cancel" : dbp_choose, b.x, b.y, b.w, b.h, 13, white, 0, 1, 1);
     }
 }
-/* returns 1 if another database was chosen */
-int host_choose_database(void) {
+/* the panel: returns the database chosen (database.c's number), or -1 */
+static int dbp_run(const char *title, const char *choose) {
+    dbp_title = title; dbp_choose = choose;
     dbp_n = db_count();
     int was = db_selected(), chosen = -1;
-    if (dbp_n < 1) return 0;
+    if (dbp_n < 1) return -1;
     dbp_sel = was >= 0 ? was : 0; dbp_top = dbp_sel >= DB_ROWS ? dbp_sel - DB_ROWS + 1 : 0;
     dbp_open = 1; bk_mx = bk_my = -1;
     SDL_SetCursor(SDL_GetDefaultCursor()); SDL_ShowCursor(SDL_ENABLE);
@@ -913,10 +915,17 @@ int host_choose_database(void) {
     }
     os_cursor_key = 0; os_cursor_visible = -1;
     SDL_PumpEvents(); SDL_FlushEvents(SDL_MOUSEBUTTONDOWN, SDL_MOUSEBUTTONUP);
-    if (chosen >= 0 && chosen != was) db_select(chosen);
     present();
+    return chosen;
+}
+/* Change Database: returns 1 if another database was chosen */
+int host_choose_database(void) {
+    int was = db_selected(), chosen = dbp_run("Choose Database", "Choose");
+    if (chosen >= 0 && chosen != was) db_select(chosen);
     return chosen >= 0 && chosen != was;
 }
+/* Database Editor: which database to edit (the game's choice stays as it is); -1 = cancelled */
+int host_pick_database(void) { return dbp_run("Edit Which Database?", "Edit"); }
 
 void host_restore_backup(void) { bk_run(); }     /* overrides.c: the Options screen's Restore Backup */
 

@@ -7,6 +7,7 @@
 #       lib/libcm9798rt.a   the port's own code (rt/), compiled
 #       include/            rt.h, rt_internal.h
 #       data/               functions.json, labels.csv, patches.txt, overrides.txt, relocations.txt
+#       data/editor/        the same for the Database Editor (CM2ED.EXE, editor/; rt/editor.c)
 #       cflags.txt, link.txt  how to compile and link the game on this platform
 #       zig/                the C compiler (if -DCM_ZIG was given)
 # Nothing in it comes from the game: the game's code is made from each player's own CM2E16.EXE.
@@ -49,6 +50,7 @@ endif()
 file(COPY ${SRC}/rt/rt.h ${SRC}/rt/rt_internal.h DESTINATION ${K}/include)
 foreach(f functions.json labels.csv patches.txt overrides.txt relocations.txt)
   file(COPY ${SRC}/${f} DESTINATION ${K}/data)
+  file(COPY ${SRC}/editor/${f} DESTINATION ${K}/data/editor)
 endforeach()
 
 # compiling the generated C: the same options CMakeLists.txt uses for gen/

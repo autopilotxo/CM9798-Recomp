@@ -120,3 +120,15 @@ int input_mouse_x(void) { return mx; }
 int input_mouse_y(void) { return my; }
 
 void input_flush_keys(void) { kq_head = kq_tail; pending_ext = -1; }
+
+/* ---- state (rt_internal.h): the program's mouse driver settings and pending events. The pointer's
+   position and buttons are the player's, shared by every program; keys not yet read are dropped. */
+static const struct rt_var input_vars[] = {
+    { &pending_ext, sizeof pending_ext }, { &minx, sizeof minx }, { &maxx, sizeof maxx }, { &miny, sizeof miny }, { &maxy, sizeof maxy },
+    { &h_mask, sizeof h_mask }, { &h_off, sizeof h_off }, { &h_sel, sizeof h_sel },
+    { press_cnt, sizeof press_cnt }, { rel_cnt, sizeof rel_cnt }, { press_x, sizeof press_x }, { press_y, sizeof press_y },
+    { rel_x, sizeof rel_x }, { rel_y, sizeof rel_y }, { evq, sizeof evq }, { &ev_head, sizeof ev_head }, { &ev_tail, sizeof ev_tail },
+    { &in_callback, sizeof in_callback },
+};
+size_t input_state_size(void) { return rt_vars_size(input_vars, (int)(sizeof input_vars / sizeof input_vars[0])); }
+void input_state_swap(void *buf) { rt_vars_swap(input_vars, (int)(sizeof input_vars / sizeof input_vars[0]), buf); kq_head = kq_tail = 0; }

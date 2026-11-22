@@ -46,6 +46,7 @@ void f_1013714(void) {
    Returns 1 if a pointer should be visible, filling rgba (11x11 ARGB8888) from the current palette. */
 int guest_pointer(uint32_t argb[11 * 11], int *shape) {
     extern uint8_t vga_dac[256][3];
+    if (g_editor_running) return 0;          /* the editor draws its own pointer (rt/editor.c) */
     if (!g_os_pointer || !RD8(PTR_ENABLED) || (int16_t)RD16(PTR_DRAG_ITEM) != -1) return 0;
     *shape = RD8(PTR_SHAPE) ? 1 : 0;
     uint32_t img = *shape ? PTR_IMG_ALT : PTR_IMG_ARROW;
@@ -229,12 +230,18 @@ void hook_trim_histories(void) {
  * DOS environment (0x21000) and the DOS memory the game can allocate (from 0x30000). */
 #define OPTIONS_MENU_TAIL 0x00028000u
 uint32_t options_menu_tail(void) {
-    static const char tail[] = "Delete Game*5|Change Database*6|Restore Backup*8|Hall Of Fame*7";
-    memcpy(&M[OPTIONS_MENU_TAIL], tail, sizeof tail);
+    /* with the Database Editor (rt/editor.c): New Game, Restore Game, Delete Game, Restore Backup over
+       Change Database, Database Editor, Hall Of Fame (seven boxes: the game makes it four and three) */
+    static const char with_editor[] = "Delete Game*5|Restore Backup*8|Change Database*6|Database Editor*9|Hall Of Fame*7";
+    static const char without[] = "Delete Game*5|Change Database*6|Restore Backup*8|Hall Of Fame*7";
+    if (editor_available()) memcpy(&M[OPTIONS_MENU_TAIL], with_editor, sizeof with_editor);
+    else memcpy(&M[OPTIONS_MENU_TAIL], without, sizeof without);
     return OPTIONS_MENU_TAIL;
 }
 void host_restore_backup(void);                  /* sdl.c: the Restore Backup panel; headless.c */
+void host_database_editor(void);                 /* the Database Editor (CM2ED); editor.c */
 void hook_options_choice(void) {                 /* after the menu's "is it Hall Of Fame?" test */
+    if ((int32_t)eax == 9) { host_database_editor(); return; }
     if ((int32_t)eax != 8) return;
     host_restore_backup();
     reload_slot_list();                          /* names and empty slots may have changed */

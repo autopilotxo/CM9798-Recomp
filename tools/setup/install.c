@@ -341,7 +341,8 @@ int install_same_folder(const char *a, const char *b) {
 /* ------------------------------------------------------------------ install */
 /* the files the port reads from the game folder (beyond the database, pictures and saves) */
 static const char *const game_files[] = { "CM2E16.EXE", "MY?.FNT", "PRECALCS.BIN", "EXNMES.TXT", "ENG_MTCH.TXT",
-                                          "MTCHDSC*.TXT", "PITCH.GFX", "CONFIG.DAT", NULL };
+                                          "MTCHDSC*.TXT", "PITCH.GFX", "CONFIG.DAT",
+                                          "CM2ED.EXE", "GAZZA.PCX", NULL };          /* the Database Editor (rt/editor.c) */
 static const char *const db_files[] = { "PLAYERS.DB1", "TMDATA.DB1", "MGDATA.DB1", "PLHIST98.BIN", NULL };
 
 static void write_cfg_9798(const char *dir) {
