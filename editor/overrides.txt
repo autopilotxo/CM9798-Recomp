@@ -1,1 +1,2 @@
-# CM2ED.EXE: no hand-written replacements yet
+# CM2ED.EXE functions replaced by hand-written C (the generated one becomes e_XXXXXX_orig)
+021254    # the text routine: wrapped to record what it draws, for sharp text (rt/editor_text.c)

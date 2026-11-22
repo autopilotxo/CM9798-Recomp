@@ -20,12 +20,14 @@
 #include <string.h>
 
 #define A(x) ((uint32_t)(x) + 0x01000000u)
-#define TXT_BUFPTR   A(0xA47680)   /* dword: off-screen screen copy the text is drawn into */
-#define TXT_FONTS    A(0xA476D8)   /* dword[7]: loaded MYn.FNT images */
-#define TXT_FONTIDX  A(0x0F41E4)   /* word: current font 0..6 */
-#define TXT_PEN_X    A(0xADFE62)   /* word */
-#define TXT_PEN_Y    A(0xADFE64)   /* word */
-#define TXT_COLOUR   A(0xADFE5C)   /* byte: palette index */
+/* where the program keeps them: the game's, or (text_use_editor) the Database Editor's - CM2ED.EXE
+   has the same text routine (0x21254, rt/editor.c), with its variables elsewhere */
+static uint32_t TXT_BUFPTR  = A(0xA47680);   /* dword: off-screen screen copy the text is drawn into */
+static uint32_t TXT_FONTS   = A(0xA476D8);   /* dword[7]: loaded MYn.FNT images */
+static uint32_t TXT_FONTIDX = A(0x0F41E4);   /* word: current font 0..6 */
+static uint32_t TXT_PEN_X   = A(0xADFE62);   /* word */
+static uint32_t TXT_PEN_Y   = A(0xADFE64);   /* word */
+static uint32_t TXT_COLOUR  = A(0xADFE5C);   /* byte: palette index */
 
 #define SW 640
 #define SH 480
@@ -91,6 +93,18 @@ static void compact(void) {
     }
     g_nglyphs = n;
     rebuild_rows();
+}
+
+/* forget every letter (another program is taking the screen), and use its addresses */
+void text_reset(void) { g_nglyphs = 0; rows_ready = 0; recording = 0; }
+void text_use_editor(int editor) {
+    TXT_BUFPTR  = editor ? A(0x0AB6B0) : A(0xA47680);
+    TXT_FONTS   = editor ? A(0x0AB708) : A(0xA476D8);
+    TXT_FONTIDX = editor ? A(0x03AAD0) : A(0x0F41E4);
+    TXT_PEN_X   = editor ? A(0x143E92) : A(0xADFE62);
+    TXT_PEN_Y   = editor ? A(0x143E94) : A(0xADFE64);
+    TXT_COLOUR  = editor ? A(0x143E8C) : A(0xADFE5C);
+    text_reset();
 }
 
 /* the routine is about to draw character EAX at the pen position */

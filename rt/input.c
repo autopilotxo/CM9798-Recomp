@@ -68,9 +68,12 @@ void input_mouse_move(int px, int py) {
     x = clampi(x, minx, maxx); y = clampi(y, miny, maxy);
     if (x != mx || y != my) { mx = x; my = y; queue_event(0x01); }
 }
+static unsigned press_serial;          /* every press, ever (rt/editor.c: one click, one action) */
+unsigned input_press_serial(void) { return press_serial; }
 void input_mouse_button(int b, int down) {
     if (b < 0 || b > 2) return;
     int bit = 1 << b;
+    if (down) press_serial++;
     if (down) { mbuttons |= bit; press_cnt[b]++; press_x[b] = mx; press_y[b] = my; queue_event((uint16_t)(0x02 << (2 * b))); }
     else { mbuttons &= ~bit; rel_cnt[b]++; rel_x[b] = mx; rel_y[b] = my; queue_event((uint16_t)(0x04 << (2 * b))); }
 }

@@ -828,6 +828,8 @@ static void dbp_date(int i, char *out, size_t n) {   /* "Wednesday 16th July 199
     snprintf(out, n, "%s %d%s %s %d", wd[(h + 6) % 7], d, suf, mo[m - 1], y);
 }
 static const char *dbp_title = "Choose Database", *dbp_choose = "Choose";
+/* the same panel for any short list (the Database Editor's Load Database): two columns of text */
+static const char *const *lst_c1, *const *lst_c2; static const char *lst_h1, *lst_h2;
 static void dbp_draw(float k, int ox, int oy, int pw, int ph) {
     mk = k; mox = ox; moy = oy;
     SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
@@ -840,13 +842,13 @@ static void dbp_draw(float k, int ox, int oy, int pw, int ph) {
     mfill(DB_X0 + 1, Y0 + 1, W - 2, 33, 0, 72, 0, 255);
     mfill(DB_X0 + 1, Y0 + 34, W - 2, 1, 0, 0, 0, 255);
     mtext(dbp_title, DB_X0, Y0, W, 35, 19, yellow, 1, 1, 1);
-    mtext("Database", DB_X0 + 22, Y0 + 52, 200, 15, 9, grey, 1, 0, 0);
-    mtext("First day of a new game", DB_X0 + 22 + 220, Y0 + 52, 200, 15, 9, grey, 1, 0, 0);
+    mtext(lst_c1 ? lst_h1 : "Database", DB_X0 + 22, Y0 + 52, 200, 15, 9, grey, 1, 0, 0);
+    mtext(lst_c1 ? lst_h2 : "First day of a new game", DB_X0 + 22 + 220, Y0 + 52, 200, 15, 9, grey, 1, 0, 0);
     mfill(DB_X0 + 16, Y0 + 70, W - 32, 1, 110, 110, 110, 255);
     for (int i = 0; i < DB_ROWS && dbp_top + i < dbp_n; i++) {
         int j = dbp_top + i; SDL_Rect r = dbp_row(i); const char *name; int d, m, y; char date[64];
-        if (!db_info(j, &name, &d, &m, &y)) continue;
-        dbp_date(j, date, sizeof date);
+        if (lst_c1) { name = lst_c1[j]; snprintf(date, sizeof date, "%s", lst_c2[j]); }
+        else { if (!db_info(j, &name, &d, &m, &y)) continue; dbp_date(j, date, sizeof date); }
         if (j == dbp_sel) mfill(r.x, r.y, r.w, r.h, 170, 170, 170, 255);
         else if (in_rect(r, bk_mx, bk_my)) mfill(r.x, r.y, r.w, r.h, 80, 80, 80, 255);
         SDL_Color c = j == dbp_sel ? dark : white;
@@ -865,10 +867,18 @@ static void dbp_draw(float k, int ox, int oy, int pw, int ph) {
     }
 }
 /* the panel: returns the database chosen (database.c's number), or -1 */
-static int dbp_run(const char *title, const char *choose) {
+static int dbp_run_n(const char *title, const char *choose, int n, int was);
+static int dbp_run(const char *title, const char *choose) { lst_c1 = 0; return dbp_run_n(title, choose, db_count(), db_selected()); }
+int host_pick_list(const char *title, const char *choose, const char *head1, const char *head2,
+                   const char *const *col1, const char *const *col2, int n, int sel) {
+    lst_c1 = col1; lst_c2 = col2; lst_h1 = head1; lst_h2 = head2;
+    int r = dbp_run_n(title, choose, n, sel);
+    lst_c1 = 0; return r;
+}
+static int dbp_run_n(const char *title, const char *choose, int n, int was) {
     dbp_title = title; dbp_choose = choose;
-    dbp_n = db_count();
-    int was = db_selected(), chosen = -1;
+    dbp_n = n;
+    int chosen = -1;
     if (dbp_n < 1) return -1;
     dbp_sel = was >= 0 ? was : 0; dbp_top = dbp_sel >= DB_ROWS ? dbp_sel - DB_ROWS + 1 : 0;
     dbp_open = 1; bk_mx = bk_my = -1;

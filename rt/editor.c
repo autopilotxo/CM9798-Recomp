@@ -13,6 +13,10 @@
  * rest), with nothing redirected; what isn't there (its pictures and fonts) comes from the game
  * folder. The first change to each file in a session is preceded by a copy of it, in
  * databases/<folder>/backups/<date>_<time>/. Edits are used by new games, as CM2ED's help says.
+ *
+ * editor/patches.txt changes a few things, with the hooks below: sharp text (as in the game), one
+ * click per action, "Back to main menu" in place of "Exit program", a line saying which database
+ * is being edited, and Load Database as a choice of Players, Managers or Teams.
  */
 #include "rt_internal.h"
 #include "database.h"
@@ -33,6 +37,11 @@
 extern const struct gfunc e_funcs[]; extern const unsigned e_nfuncs;       /* gen/edtable.c (or editor_none.c) */
 extern const uint32_t e_retsites[]; extern const unsigned e_nretsites;     /* gen/edretsites.c */
 #define ED_ENTRY     0x010254C4u     /* _cstart_ (0x0254C4) */
+#define ED_BUTTONS   0x0103AAD2u     /* word: mouse buttons down, kept by its mouse handler (0x1A590) */
+#define ED_CANCELLED 0x010A89AFu     /* byte: the last text box was left with Escape */
+#define ED_TEXT_W    0x0101FF88u     /* width of a string: AL size, EDX string (a call returns to 0x102089D) */
+#define ED_TEXT      0x0101FFD0u     /* draw a string: EAX colour, DL size, EBX x, ECX y, the string pushed (a call returns to 0x10209F9) */
+#define ED_STRINGS   0x00028000u     /* our texts, in free conventional memory (below the DOS memory at 0x30000) */
 #define ED_STACK_TOP 0x0114A850u     /* the LE header's stack: object 2 + 0x11A850 */
 
 extern const char *g_game_dir;
@@ -40,12 +49,69 @@ extern void dos_setup(const char *dir);
 extern int rt_load_exe(const char *path);
 void dos_plain_files(const char *dir, const char *alt);
 extern void (*g_dos_exit)(int code);
-extern int g_nglyphs;
 void fpu_setcw(void);
 int host_pick_database(void);           /* sdl.c / headless.c: which database to edit, -1 = cancelled */
 void host_message(const char *title, const char *text);
 
 int g_editor_running;                   /* the editor has the screen (sdl.c: no game overlays, no OS pointer) */
+static char db_title[160];              /* "Editing <name> Database" */
+void host_wait(void); void input_dispatch_mouse(void); uint32_t host_ms(void);
+int host_pick_list(const char *title, const char *choose, const char *head1, const char *head2,
+                   const char *const *col1, const char *const *col2, int n, int sel);   /* sdl.c / headless.c */
+
+/* ---- hooks (editor/patches.txt) ---- */
+/* one click, one action: a press that has chosen something in a menu chooses nothing else */
+unsigned input_press_serial(void);
+static unsigned used_press = ~0u;
+void hook_ed_menu_begin(void) {
+    if ((RD16(ED_BUTTONS) & 3) && input_press_serial() == used_press) WR16(ED_BUTTONS, RD16(ED_BUTTONS) & ~3u);
+}
+void hook_ed_menu_end(void) {
+    if ((int8_t)(eax & 0xFF) != -1 && (RD16(ED_BUTTONS) & 3)) used_press = input_press_serial();
+}
+/* a text box is starting: wait for the click that opened it to be let go */
+void hook_ed_fresh_click(void) {
+    uint32_t t0 = host_ms();
+    while ((RD16(ED_BUTTONS) & 3) && host_ms() - t0 < 3000) { host_wait(); input_dispatch_mouse(); }
+}
+/* the texts: in free memory (they're longer than the originals), written when the editor starts */
+enum { T_BACK = 0, T_BACK_Q = 0x40, T_BACK_TITLE = 0x80, T_FILE = 0xC0, T_CAPTION = 0x100 };
+static void put_text(uint32_t at, const char *s) { size_t n = strlen(s); memcpy(&M[ED_STRINGS + at], s, n + 1); }
+uint32_t ed_text_back(void) { return ED_STRINGS + T_BACK; }
+uint32_t ed_text_back_question(void) { return ED_STRINGS + T_BACK_Q; }
+uint32_t ed_text_back_title(void) { return ED_STRINGS + T_BACK_TITLE; }
+/* call one of the editor's functions: EAX, EDX, EBX, ECX, then one value on the stack (or none);
+   ret is the return site of a real call to it. Every register is kept. */
+static uint32_t call_editor(uint32_t fn, uint32_t ret, uint32_t a, uint32_t d, uint32_t b, uint32_t c, int push, uint32_t st) {
+    gfn f = rt_lookup(fn); if (!f) return 0;
+    uint32_t r[8] = { eax, ebx, ecx, edx, esi, edi, ebp, esp }, saved_ret = g_ret;
+    if (push) PUSH32(st);
+    eax = a; edx = d; ebx = b; ecx = c;
+    PUSH32(ret); f();
+    uint32_t v = eax;
+    eax = r[0]; ebx = r[1]; ecx = r[2]; edx = r[3]; esi = r[4]; edi = r[5]; ebp = r[6]; esp = r[7]; g_ret = saved_ret;
+    return v;
+}
+/* the main menu, once drawn: which database this is, above the bottom button, in its own lettering */
+#define CAPTION_SIZE   5               /* the editor's size 5 (its font 2) */
+#define CAPTION_COLOUR 0x82
+#define CAPTION_SHADOW 0x00
+void hook_ed_caption(void) {
+    int w = (int)(int16_t)call_editor(ED_TEXT_W, 0x0102089Du, CAPTION_SIZE, ED_STRINGS + T_CAPTION, 0, 0, 0, 0);
+    int x = 320 - w / 2, y = 419;
+    call_editor(ED_TEXT, 0x010209F9u, CAPTION_SHADOW, CAPTION_SIZE, (uint32_t)(x + 1), (uint32_t)(y + 1), 1, ED_STRINGS + T_CAPTION);
+    call_editor(ED_TEXT, 0x010209F9u, CAPTION_COLOUR, CAPTION_SIZE, (uint32_t)x, (uint32_t)y, 1, ED_STRINGS + T_CAPTION);
+}
+/* Load Database: which file, from a list */
+uint32_t ed_pick_file(void) {
+    static const char *const names[] = { "Players", "Managers", "Teams" };
+    static const char *const files[] = { "players.db1", "mgdata.db1", "tmdata.db1" };
+    static int last;
+    int i = host_pick_list("Load Database", "Load", "Data", "File", names, files, 3, last);
+    WR8(ED_CANCELLED, i < 0);
+    if (i >= 0) { last = i; put_text(T_FILE, files[i]); } else put_text(T_FILE, "");
+    return ED_STRINGS + T_FILE;
+}
 
 /* ---- the state every program starts with: taken at start-up, before anything has run ---- */
 struct part { size_t (*size)(void); void (*swap)(void *); unsigned char *fresh; };
@@ -108,10 +174,15 @@ void host_database_editor(void) {
     if (!editor_available() || !find_exe(exe, sizeof exe)) return;
     /* which database: its folder (databases/<folder>), or the game folder when there are none */
     if (db_count() > 0) {
-        int i = host_pick_database(); const char *f = db_folder(i);
+        int i = host_pick_database(); const char *f = db_folder(i), *name; int dd, mm, yy;
         if (!f) return;
         snprintf(edit_dir, sizeof edit_dir, "%s/databases/%s", g_game_dir, f);
-    } else snprintf(edit_dir, sizeof edit_dir, "%s", g_game_dir);
+        if (!db_info(i, &name, &dd, &mm, &yy)) name = f;
+        snprintf(db_title, sizeof db_title, "Editing %s%s", name, strstr(name, "atabase") ? "" : " Database");
+    } else {
+        snprintf(edit_dir, sizeof edit_dir, "%s", g_game_dir);
+        snprintf(db_title, sizeof db_title, "Editing the Championship Manager 97/98 Database");
+    }
     backup_made = 0; n_backed_up = 0;
     fprintf(stderr, "editor: starting CM2ED in %s\n", edit_dir);
 
@@ -123,7 +194,7 @@ void host_database_editor(void) {
         memcpy(game[i], parts[i].fresh, n);
         parts[i].swap(game[i]);              /* the program: fresh; game[i]: the game's */
     }
-    int saved_glyphs = g_nglyphs; g_nglyphs = 0;     /* the game's letters: not on the editor's screens */
+    text_use_editor(1);                      /* its letters, for sharp text (the game's are forgotten) */
     g_editor_running = 1;
     int ok = 0;
     M = calloc(1, GUEST_MEM_SIZE);
@@ -134,6 +205,10 @@ void host_database_editor(void) {
         dos_plain_files(edit_dir, g_game_dir);
         g_dos_exit = editor_quit;
         if (rt_load_exe(exe) == 0) {
+            put_text(T_BACK, "Back to main menu");
+            put_text(T_BACK_Q, "Go back to the main menu?");
+            put_text(T_BACK_TITLE, "Back to Main Menu");
+            put_text(T_CAPTION, db_title);
             gfn start = rt_lookup(ED_ENTRY);
             if (start && !setjmp(back_to_game)) {
                 esp = ED_STACK_TOP;
@@ -147,7 +222,7 @@ void host_database_editor(void) {
     if (M) { dos_close_files(); free(M); }
     for (int i = 0; i < NPARTS; i++) { parts[i].swap(game[i]); free(game[i]); }
     fpu_setcw();
-    g_nglyphs = saved_glyphs;
+    text_use_editor(0);                      /* the game draws its Options screen again */
     g_editor_running = 0;
     fprintf(stderr, "editor: %s, back to the game\n", ok ? "closed" : "couldn't start");
     if (!ok) host_message("Database Editor", "The Database Editor couldn't be started (CM2ED.EXE couldn't be loaded).");
