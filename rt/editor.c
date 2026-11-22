@@ -22,6 +22,7 @@
 #include "rt_internal.h"
 #include "database.h"
 #include "textlayer.h"
+#include "dbcheck.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -55,6 +56,7 @@ int host_pick_database(void);           /* sdl.c / headless.c: which database to
 void host_message(const char *title, const char *text);
 
 int g_editor_running;                   /* the editor has the screen (sdl.c: no game overlays, no OS pointer) */
+static char edit_dir[1200];             /* the database's folder it works in */
 static char db_title[160];              /* "Editing <name> Database" */
 void host_wait(void); void input_dispatch_mouse(void); uint32_t host_ms(void);
 int host_pick_list(const char *title, const char *choose, const char *head1, const char *head2,
@@ -76,13 +78,25 @@ void hook_ed_fresh_click(void) {
     while ((RD16(ED_BUTTONS) & 3) && host_ms() - t0 < 3000) { host_wait(); input_dispatch_mouse(); }
 }
 /* the texts: in free memory (they're longer than the originals), written when the editor starts */
-enum { T_BACK = 0, T_BACK_Q = 0x40, T_BACK_TITLE = 0x80, T_FILE = 0xC0, T_CAPTION = 0x100, T_SAVE_Q = 0x200 };
+enum { T_BACK = 0, T_BACK_Q = 0x40, T_BACK_TITLE = 0x80, T_FILE = 0xC0, T_CAPTION = 0x100, T_SAVE_Q = 0x200, T_MENU = 0x240 };
 #define ED_LOADED_NAME 0x01081328u   /* the name of the file that was loaded (Save's name box started with it) */
 static void put_text(uint32_t at, const char *s) { size_t n = strlen(s); memcpy(&M[ED_STRINGS + at], s, n + 1); }
 uint32_t ed_text_back(void) { return ED_STRINGS + T_BACK; }
 uint32_t ed_text_back_question(void) { return ED_STRINGS + T_BACK_Q; }
 uint32_t ed_text_back_title(void) { return ED_STRINGS + T_BACK_TITLE; }
 uint32_t ed_text_save_question(void) { return ED_STRINGS + T_SAVE_Q; }
+uint32_t ed_text_menu(void) { return ED_STRINGS + T_MENU; }
+/* Test Database (choice 3 on the main menu): the saved files, checked the way a new game reads them,
+   against the game folder's original 97/98 files */
+static char ed_leagues[160];
+void host_report(const char *title, char **lines, int n);    /* sdl.c / headless.c */
+void hook_ed_menu_choice(void) {
+    if ((int32_t)edx != 3) return;
+    char **lines; int n;
+    int problems = dbcheck_run(edit_dir, strcmp(edit_dir, g_game_dir) ? g_game_dir : NULL, ed_leagues, &lines, &n);
+    fprintf(stderr, "editor: Test Database: %d problem%s\n", problems, problems == 1 ? "" : "s");
+    host_report("Test Database", lines, n);
+}
 /* Save Database: the file that was loaded, with no box to type it in */
 uint32_t ed_save_name(void) { WR8(ED_CANCELLED, 0); return ED_LOADED_NAME; }
 /* call one of the editor's functions: EAX, EDX, EBX, ECX, then one value on the stack (or none);
@@ -145,7 +159,7 @@ static int find_exe(char *out, size_t n) {
 int editor_available(void) { char p[1200]; return e_nfuncs > 0 && parts[0].fresh && find_exe(p, sizeof p); }
 
 /* ---- a copy of each file before the editor first changes it ---- */
-static char edit_dir[1200], backup_dir[1400]; static int backup_made;
+static char backup_dir[1400]; static int backup_made;
 static char backed_up[32][64]; static int n_backed_up;
 static int copy_file(const char *from, const char *to) {
     FILE *in = fopen(from, "rb"); if (!in) return 0;
@@ -184,9 +198,11 @@ void host_database_editor(void) {
         snprintf(edit_dir, sizeof edit_dir, "%s/databases/%s", g_game_dir, f);
         if (!db_info(i, &name, &dd, &mm, &yy)) name = f;
         snprintf(db_title, sizeof db_title, "Editing %s%s", name, strstr(name, "atabase") ? "" : " Database");
+        snprintf(ed_leagues, sizeof ed_leagues, "%s", db_leagues_of(i));
     } else {
         snprintf(edit_dir, sizeof edit_dir, "%s", g_game_dir);
         snprintf(db_title, sizeof db_title, "Editing the Championship Manager 97/98 Database");
+        ed_leagues[0] = 0;
     }
     backup_made = 0; n_backed_up = 0;
     fprintf(stderr, "editor: starting CM2ED in %s\n", edit_dir);
@@ -215,6 +231,7 @@ void host_database_editor(void) {
             put_text(T_BACK_TITLE, "Back to Main Menu");
             put_text(T_CAPTION, db_title);
             put_text(T_SAVE_Q, "Save all changes?");
+            put_text(T_MENU, "Load Database|Save Database|Edit Database|Test Database|");
             gfn start = rt_lookup(ED_ENTRY);
             if (start && !setjmp(back_to_game)) {
                 esp = ED_STACK_TOP;

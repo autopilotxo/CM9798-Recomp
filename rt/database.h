@@ -13,6 +13,7 @@ int         db_selected(void);                /* index of the chosen one (-1: no
 int         db_info(int i, const char **name, int *day, int *month, int *year);   /* database i; 0 = no such */
 void        db_select(int i);                 /* Choose Database: use database i for new games */
 const char *db_folder(int i);                 /* database i's folder under databases/ (NULL: no such) */
+const char *db_leagues_of(int i);             /* its database.cfg "leagues =" ("": all) */
 int         db_in_frontend(void);             /* in the front end (Options, New/Restore Game screens)? */
 void        db_frontend(int in);              /* 1 while in the front end (0x44C94), where the choice applies */
 int         db_redirect(const char *dos_path, char *host, size_t n);   /* dos.c: a database file? its path */

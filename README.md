@@ -43,7 +43,7 @@ compiler that comes with it can't run, so install Apple's command line tools onc
 - Import CM2 databases, including expansion packs, 96/97 data, pictures and sounds.
 - Euro 96 in careers on the CM2 database, qualifying and all, played the way Championship Manager 2 played it.
 - Selectable databases so you can play all 3 data sets on one executable.
-- The game's own data editor (CM2ED) built in: **Database Editor** on the Options screen edits any of the databases, with a backup of each file before it's first changed. Edits are used by new games. (Set up with 1.06 or earlier? Run `cm9798setup` again so `CM2ED.EXE` is copied.)
+- The game's own data editor (CM2ED) built in: **Database Editor** on the Options screen edits any of the databases, with a backup of each file before it's first changed, and **Test Database** checks a database the way a new game reads it (players, clubs, managers, divisions, nations). Edits are used by new games. (Set up with 1.06 or earlier? Run `cm9798setup` again so `CM2ED.EXE` is copied.)
 - Autosave, and save backups.
 - Star ratings and colour coded player stats as quality of life features.
 

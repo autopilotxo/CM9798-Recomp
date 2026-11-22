@@ -22,6 +22,12 @@
 010603 replace eax = ed_text_back_title();
 0105a8 after   hook_ed_caption();
 
+# Main menu: a fourth box, Test Database (choice 3): rt/dbcheck.c checks the saved files the way a new
+# game reads them. The menu's text gets "Test Database|"; after its "is it 0x63?" test, choice 3 runs
+# the test, then the menu carries on as after any other choice (it isn't 0x63, so it goes round again).
+01053e replace eax = ed_text_menu();
+0105ef after   hook_ed_menu_choice();
+
 # Load Database: choose Players, Managers or Teams (PLAYERS.DB1, MGDATA.DB1, TMDATA.DB1) from a
 # list instead of typing the file's name. The text box (0x1B5E4, "ret 4") is replaced: the name
 # comes back in EAX as it did, and the box's Escape flag (0x10A89AF) says whether it was cancelled.

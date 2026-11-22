@@ -318,6 +318,7 @@ int db_info(int i, const char **name, int *day, int *month, int *year) {
     return 1;
 }
 const char *db_folder(int i) { scan(); return i >= 0 && i < ndb ? dbs[i].dir : NULL; }
+const char *db_leagues_of(int i) { scan(); return i >= 0 && i < ndb ? dbs[i].leagues : ""; }
 void db_select(int i) {
     scan(); if (i < 0 || i >= ndb) return;
     sel = i; snprintf(choice, sizeof choice, "%s", dbs[sel].dir);

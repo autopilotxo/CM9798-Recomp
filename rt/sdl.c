@@ -210,12 +210,13 @@ static void apply_pending(void) {
 int g_menu_open;                   /* options menu is open (the game is paused) */
 static int bk_open;                /* Restore Backup panel is open (the game is paused too) */
 static int dbp_open;               /* Choose Database panel is open (likewise) */
+static int rp_open;                /* a report (the Database Editor's Test Database) is open (likewise) */
 static int watchdog(void *arg) {
     (void)arg; uint32_t last = g_int_count; int quiet = 0, reports = 0;
     for (;;) {
         SDL_Delay(1000);
         uint32_t now = g_int_count;
-        if (now != last || g_menu_open || bk_open || dbp_open) { last = now; quiet = 0; continue; }
+        if (now != last || g_menu_open || bk_open || dbp_open || rp_open) { last = now; quiet = 0; continue; }
         if (++quiet == 3 && reports < 5) {
             reports++;
             fprintf(stderr, "\n[watchdog] no DOS/BIOS calls for 3 s - the game seems stuck (poll %lu, trace position %u)\n", g_polls, g_trace_pos);
@@ -928,6 +929,73 @@ static int dbp_run_n(const char *title, const char *choose, int n, int was) {
     present();
     return chosen;
 }
+/* ---- a report: lines of text to scroll through, and OK (the Database Editor's Test Database) ---- */
+#define RP_X0 24
+#define RP_X1 616
+#define RP_Y0 40
+#define RP_ROWS 18
+#define RP_ROW_H 18
+static const char *rp_title; static char **rp_lines; static int rp_n, rp_top;
+static SDL_Rect rp_btn(void) { SDL_Rect r = { 320 - 90, RP_Y0 + 70 + RP_ROWS * RP_ROW_H + 12, 180, 28 }; return r; }
+static int rp_bottom(void) { SDL_Rect b = rp_btn(); return b.y + b.h + 10; }
+static void rp_draw(float k, int ox, int oy, int pw, int ph) {
+    mk = k; mox = ox; moy = oy;
+    SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+    SDL_Rect all = { ox, oy, pw, ph }; SDL_SetRenderDrawColor(ren, 0, 0, 0, 140); SDL_RenderFillRect(ren, &all);
+    const SDL_Color yellow = { 255, 255, 40, 255 }, white = { 255, 255, 255, 255 }, red = { 255, 120, 110, 255 },
+                    green = { 140, 230, 140, 255 }, hint = { 170, 170, 170, 255 };
+    int W = RP_X1 - RP_X0, H = rp_bottom() - RP_Y0;
+    mfill(RP_X0, RP_Y0, W, H, 0, 0, 0, 255);
+    mfill(RP_X0 + 1, RP_Y0 + 1, W - 2, H - 2, 52, 52, 52, 245);
+    mfill(RP_X0 + 1, RP_Y0 + 1, W - 2, 33, 0, 72, 0, 255);
+    mfill(RP_X0 + 1, RP_Y0 + 34, W - 2, 1, 0, 0, 0, 255);
+    mtext(rp_title, RP_X0, RP_Y0, W, 35, 19, yellow, 1, 1, 1);
+    for (int i = 0; i < RP_ROWS && rp_top + i < rp_n; i++) {
+        const char *t = rp_lines[rp_top + i];
+        SDL_Color c = !strncmp(t, "No problems", 11) ? green : strstr(t, "problem") && t[0] != ' ' ? red : t[0] == ' ' || strstr(t, "note") ? white : hint;
+        mtext(t, RP_X0 + 16, RP_Y0 + 46 + i * RP_ROW_H, W - 32, RP_ROW_H, 9, c, t[0] != ' ', 0, 0);
+    }
+    if (rp_n > RP_ROWS) {
+        char l[64]; snprintf(l, sizeof l, "%d-%d of %d lines  (scroll for more)", rp_top + 1, rp_top + RP_ROWS < rp_n ? rp_top + RP_ROWS : rp_n, rp_n);
+        mtext(l, RP_X0 + 16, RP_Y0 + 50 + RP_ROWS * RP_ROW_H, W - 32, 14, 8, hint, 0, 0, 0);
+    }
+    SDL_Rect b = rp_btn(); mbevel(b, in_rect(b, bk_mx, bk_my) ? 120 : 100);
+    mtext("OK", b.x, b.y, b.w, b.h, 13, white, 0, 1, 1);
+}
+void host_report(const char *title, char **lines, int n) {
+    rp_title = title; rp_lines = lines; rp_n = n; rp_top = 0; rp_open = 1; bk_mx = bk_my = -1;
+    SDL_SetCursor(SDL_GetDefaultCursor()); SDL_ShowCursor(SDL_ENABLE);
+    present();
+    while (rp_open) {
+        SDL_Event e;
+        if (SDL_WaitEventTimeout(&e, 100)) do {
+            switch (e.type) {
+            case SDL_QUIT: fprintf(stderr, "window closed - exiting\n"); if (rec) fclose(rec); SDL_Quit(); exit(0);
+            case SDL_KEYDOWN:
+                if (shortcut_key(&e.key) || e.key.repeat) break;
+                if (e.key.keysym.sym == SDLK_ESCAPE || e.key.keysym.sym == SDLK_RETURN || e.key.keysym.sym == SDLK_KP_ENTER) rp_open = 0;
+                else if (e.key.keysym.sym == SDLK_UP) rp_top--;
+                else if (e.key.keysym.sym == SDLK_DOWN) rp_top++;
+                else if (e.key.keysym.sym == SDLK_PAGEUP) rp_top -= RP_ROWS;
+                else if (e.key.keysym.sym == SDLK_PAGEDOWN) rp_top += RP_ROWS;
+                break;
+            case SDL_MOUSEMOTION: bk_mx = e.motion.x; bk_my = e.motion.y; break;
+            case SDL_MOUSEWHEEL: rp_top -= e.wheel.y * 3; break;
+            case SDL_MOUSEBUTTONDOWN:
+                if (e.button.button == SDL_BUTTON_LEFT && in_rect(rp_btn(), e.button.x, e.button.y)) rp_open = 0;
+                break;
+            case SDL_WINDOWEVENT: if (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) update_title(); break;
+            default: break;
+            }
+            if (rp_top > rp_n - RP_ROWS) rp_top = rp_n - RP_ROWS;
+            if (rp_top < 0) rp_top = 0;
+        } while (rp_open && SDL_PollEvent(&e));
+        present();
+    }
+    os_cursor_key = 0; os_cursor_visible = -1;
+    SDL_PumpEvents(); SDL_FlushEvents(SDL_MOUSEBUTTONDOWN, SDL_MOUSEBUTTONUP);
+    present();
+}
 /* Change Database: returns 1 if another database was chosen */
 int host_choose_database(void) {
     int was = db_selected(), chosen = dbp_run("Choose Database", "Choose");
@@ -1044,6 +1112,7 @@ static void present(void) {
         if (g_menu_open) menu_draw(k, ox, oy, (int)(w * k), (int)(h * k));
         if (bk_open) bk_draw(k, ox, oy, (int)(w * k), (int)(h * k));
         if (dbp_open) dbp_draw(k, ox, oy, (int)(w * k), (int)(h * k));
+        if (rp_open) rp_draw(k, ox, oy, (int)(w * k), (int)(h * k));
         if (shot_pending) shot_capture(ox, oy, (int)(w * k), (int)(h * k));   /* (F9: before the note) */
         if (toast) sharp_draw_note(ren, toast_text, (uint8_t)toast, k, ox, oy, (int)(w * k), (int)(h * k));
         SDL_RenderSetLogicalSize(ren, w, h);
