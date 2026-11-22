@@ -49,6 +49,7 @@ extern char **environ;
 #ifdef __APPLE__
 #include <mach-o/dyld.h>
 #include <limits.h>
+#include <sys/sysctl.h>
 #endif
 #ifndef LAUNCHER_CONSOLE
 #define SDL_MAIN_HANDLED
@@ -271,6 +272,31 @@ static int run_wait(char **v, int permille, const char *what) {
 
 /* ------------------------------------------------------------------ the build */
 #ifndef _WIN32
+#ifdef __APPLE__
+/* macOS versions as major << 16 | minor << 8 (as Mach-O load commands keep them) */
+static unsigned macos_version(void) {
+    char v[32] = ""; size_t n = sizeof v; unsigned ma = 0, mi = 0;
+    if (sysctlbyname("kern.osproductversion", v, &n, NULL, 0) != 0 || sscanf(v, "%u.%u", &ma, &mi) < 1) return 0;
+    return ma << 16 | mi << 8;
+}
+/* the oldest macOS a program runs on, from its LC_BUILD_VERSION (or LC_VERSION_MIN_MACOSX); 0 if unknown */
+static unsigned macho_minos(const char *path) {
+    FILE *f = fopen(path, "rb"); if (!f) return 0;
+    unsigned char h[32], lc[16]; unsigned r = 0;
+    if (fread(h, 1, 32, f) == 32 && h[0] == 0xCF && h[1] == 0xFA && h[2] == 0xED && h[3] == 0xFE) {  /* 64-bit, little-endian */
+        uint32_t ncmds = h[16] | h[17] << 8 | h[18] << 16 | (uint32_t)h[19] << 24; long at = 32;
+        for (uint32_t i = 0; i < ncmds && i < 512; i++) {
+            if (fseek(f, at, SEEK_SET) || fread(lc, 1, 16, f) != 16) break;
+            uint32_t cmd = lc[0] | lc[1] << 8 | lc[2] << 16 | (uint32_t)lc[3] << 24, size = lc[4] | lc[5] << 8 | lc[6] << 16 | (uint32_t)lc[7] << 24;
+            if (cmd == 0x32) { r = lc[12] | lc[13] << 8 | lc[14] << 16 | (uint32_t)lc[15] << 24; break; }   /* LC_BUILD_VERSION: minos */
+            if (cmd == 0x24) { r = lc[8] | lc[9] << 8 | lc[10] << 16 | (uint32_t)lc[11] << 24; break; }    /* LC_VERSION_MIN_MACOSX */
+            if (size < 8) break;
+            at += size;
+        }
+    }
+    fclose(f); return r;
+}
+#endif
 /* the system's C compiler (cc, gcc or clang on the PATH); on a Mac only if Apple's command line tools
    are installed (/usr/bin/cc is there anyway, and would only offer to install them) */
 static int system_cc(char *out, size_t n) {
@@ -430,6 +456,25 @@ static int build(const char *exe, char *err, size_t errn) {
     }
     if ((strchr(cc.v[0], '/') || strchr(cc.v[0], '\\')) && !is_file(cc.v[0])) unpack_compiler();
     unquarantine();
+#ifdef __APPLE__
+    /* the bundled Zig needs a newer macOS than the programs do (Zig 0.17: macOS 15): on an older Mac make
+       the game with Apple's own compiler instead, from its command line tools */
+    if (!(env_cc && *env_cc) && is_file(cc.v[0])) {
+        unsigned need = macho_minos(cc.v[0]), have = macos_version();
+        if (need && have && have < need) {
+            char sys[1300];
+            if (system_cc(sys, sizeof sys)) {
+                logf_("macOS %u.%u is older than the bundled compiler needs (%u.%u): using %s\n", have >> 16, have >> 8 & 255, need >> 16, need >> 8 & 255, sys);
+                arg_free(&cc); arg(&cc, sys);
+            } else {
+                snprintf(err, errn, "The game is made on your Mac the first time it starts. The compiler that comes with it needs "
+                         "macOS %u or newer, and this Mac has macOS %u.%u.\n\nInstall Apple's command line tools instead "
+                         "(in Terminal: xcode-select --install), then start the game again.", need >> 16, have >> 16, have >> 8 & 255);
+                return -1;
+            }
+        }
+    }
+#endif
     if ((strchr(cc.v[0], '/') || strchr(cc.v[0], '\\')) && !is_file(cc.v[0])) {
 #ifndef _WIN32
         /* no bundled compiler (a smaller download): use the system's own C compiler, if it has one */

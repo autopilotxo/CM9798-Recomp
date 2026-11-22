@@ -28,7 +28,9 @@ pictures and sounds from your own installation.
 
 Linux needs your distribution's SDL2 and SDL2_ttf packages (most desktops have them). On macOS,
 the first time, right-click `cm9798setup` and `cm9798` and choose **Open** (they aren't signed
-with an Apple developer certificate).
+with an Apple developer certificate). It runs on macOS 11 (Big Sur) and later; before macOS 15 the
+compiler that comes with it can't run, so install Apple's command line tools once
+(in Terminal: `xcode-select --install`) and the game is made with those instead.
 
 ## New Features
 
