@@ -7,10 +7,13 @@
  *   - a player of a nation the game doesn't know (it stops with "Unrecognised Nation"): nations are
  *     the national teams' names, in any of the seven languages
  *   - a club with a division code the game doesn't have
- *   - a playable division (of the leagues database.cfg offers) without its number of clubs
+ *   - a playable division (of the leagues database.cfg offers) with fewer than 2 clubs
  *   - a club in one with no players at all (as Rio Ave was before 1.05), or two clubs of one name there
- * Notes (usually harmless): clubs there with fewer than 11 players or no manager, and players or
- * managers whose club isn't in the database. Each says whether the original 97/98 database has it too,
+ *   - a club in a division whose nation is a continent or EXTINCT (as national and former teams have):
+ *     the game reads such a team as a nation's, not a club (Seraing in the first 1995/96 imports)
+ * Notes (usually harmless): a playable division with another number of clubs than 97/98's (the game
+ * draws up a full fixture list for it: 22 clubs play 42 matches each), clubs there with fewer than 11
+ * players, no manager or more than one, and players or managers whose club isn't in the database. Each says whether the original 97/98 database has it too,
  * as it has a few of each.
  *
  * Players and managers name their club by its full or short English name, or a shortened form of the
@@ -85,7 +88,7 @@ static int is_continent(const char *s) {
 /* ---- a database, read for checking ---- */
 typedef struct {
     DB t, p, m;
-    int nclub; struct club { char lng[52], sht[32], fl[52], fs[32], div[8]; int players, managers, row; } *club;
+    int nclub; struct club { char lng[52], sht[32], fl[52], fs[32], div[8]; int players, managers, row; char nat[16]; } *club;
     char (*nation)[40]; int nnat;
 } Data;
 static void data_free(Data *x) { db_free(&x->t); db_free(&x->p); db_free(&x->m); free(x->club); free(x->nation); memset(x, 0, sizeof *x); }
@@ -117,10 +120,12 @@ static int data_read(Data *x, const char *dir) {
     x->club = calloc((size_t)x->t.n + 1, sizeof *x->club); x->nation = calloc((size_t)x->t.n * 14 + 1, sizeof *x->nation);
     for (int i = 0; i < x->t.n; i++) {
         char nt[40]; gets_(&x->t, i, "Nation", nt, sizeof nt);
-        if (is_continent(nt)) { for (int k = 0; nf[k]; k++) { gets_(&x->t, i, nf[k], x->nation[x->nnat], sizeof x->nation[0]); if (x->nation[x->nnat][0]) x->nnat++; } continue; }
+        char dv[8]; gets_(&x->t, i, "Division", dv, sizeof dv);
+        if (is_continent(nt) && !dv[0]) { for (int k = 0; nf[k]; k++) { gets_(&x->t, i, nf[k], x->nation[x->nnat], sizeof x->nation[0]); if (x->nation[x->nnat][0]) x->nnat++; } continue; }
         struct club *c = &x->club[x->nclub++]; c->row = i;
         gets_(&x->t, i, "UK Long Name", c->lng, sizeof c->lng); gets_(&x->t, i, "UK Short Name", c->sht, sizeof c->sht);
         gets_(&x->t, i, "Division", c->div, sizeof c->div);
+        if (is_continent(nt)) snprintf(c->nat, sizeof c->nat, "%s", nt);
         fold(c->lng, c->fl, sizeof c->fl); fold(c->sht, c->fs, sizeof c->fs);
     }
     char s[64];
@@ -198,14 +203,17 @@ int dbcheck_run(const char *dir, const char *ref_dir, const char *leagues, char 
         for (int k = 0; divs[k].div; k++) {
             if (!league_offered(leagues, divs[k].league)) continue;
             int n = 0; for (int i = 0; i < d.nclub; i++) if (!strcmp(d.club[i].div, divs[k].div)) n++;
-            if (n != divs[k].clubs) PROBLEM("Division %s (%s league): %d clubs - the game needs %d", divs[k].div, divs[k].league, n, divs[k].clubs);
+            if (n < 2) PROBLEM("Division %s (%s league): %d club%s - a league needs at least 2", divs[k].div, divs[k].league, n, n == 1 ? "" : "s");
+            else if (n != divs[k].clubs) NOTE("Division %s (%s league): %d clubs, 97/98 has %d - the game plays %d matches each", divs[k].div, divs[k].league, n, divs[k].clubs, 2 * (n - 1));
         }
         for (int i = 0; i < d.nclub; i++) {
             const struct club *c = &d.club[i]; if (!playable(c->div, leagues)) continue;
             const struct club *o = ref_club(ref, c->lng);
             const char *too = o && playable(o->div, NULL) ? " (as in the 97/98 database)" : "";
+            if (c->nat[0]) PROBLEM("%s (%s): nation is \"%s\" - a club in a league needs its country", c->lng, c->div, c->nat);
             if (!c->players) PROBLEM("%s (%s): no players", c->lng, c->div);
             else if (c->players < 11) { int same = o && o->players < 11; NOTE("%s (%s): only %d player%s%s", c->lng, c->div, c->players, c->players == 1 ? "" : "s", same ? too : ""); }
+            if (c->managers > 1) NOTE("%s (%s): %d managers - only one can manage it", c->lng, c->div, c->managers);
             if (!c->managers) { int same = o && !o->managers; NOTE("%s (%s): no manager%s", c->lng, c->div, same ? too : ""); }
             for (int j = i + 1; j < d.nclub; j++) if (!strcmp(d.club[j].fl, c->fl)) PROBLEM("Two clubs called %s (%s and %s): players and managers can only name one", c->lng, c->div, d.club[j].div[0] ? d.club[j].div : "no division");
         }
