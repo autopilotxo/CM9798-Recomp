@@ -46,10 +46,12 @@ void f_1013714(void) {
    Returns 1 if a pointer should be visible, filling rgba (11x11 ARGB8888) from the current palette. */
 int guest_pointer(uint32_t argb[11 * 11], int *shape) {
     extern uint8_t vga_dac[256][3];
-    if (g_editor_running) return 0;          /* the editor draws its own pointer (rt/editor.c) */
-    if (!g_os_pointer || !RD8(PTR_ENABLED) || (int16_t)RD16(PTR_DRAG_ITEM) != -1) return 0;
-    *shape = RD8(PTR_SHAPE) ? 1 : 0;
-    uint32_t img = *shape ? PTR_IMG_ALT : PTR_IMG_ARROW;
+    /* the Database Editor (rt/editor.c, editor_text.c) has the same pointer code, its variables elsewhere */
+    uint32_t enabled = PTR_ENABLED, drag = PTR_DRAG_ITEM, shp = PTR_SHAPE, arrow = PTR_IMG_ARROW, alt = PTR_IMG_ALT;
+    if (g_editor_running) { enabled = 0x0103ACBDu; drag = 0x0103AAD4u; shp = 0x0103ACBCu; arrow = 0x0103AAD8u; alt = 0x0103ABCAu; }
+    if (!g_os_pointer || !RD8(enabled) || (int16_t)RD16(drag) != -1) return 0;
+    *shape = RD8(shp) ? 1 : 0;
+    uint32_t img = *shape ? alt : arrow;
     for (int i = 0; i < 121; i++) {
         uint32_t c = RD16(img + 2 * i) & 0xFF;
         if (!c) { argb[i] = 0; continue; }
