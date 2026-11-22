@@ -332,6 +332,13 @@ static void launch_game(void) {
 }
 
 /* ------------------------------------------------------------------ main */
+/* a window program has no console for stderr: say why it stopped in a message box as well */
+static void start_failed(const char *what) {
+    char m[600]; snprintf(m, sizeof m, "%s: %s", what, SDL_GetError());
+    fprintf(stderr, "%s\n", m);
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Championship Manager 97/98 - Setup", m, NULL);
+}
+
 int main(int argc, char **argv) {
     char *bp = SDL_GetBasePath();
     snprintf(base_dir, sizeof base_dir, "%s", bp ? bp : ".");
@@ -350,10 +357,10 @@ int main(int argc, char **argv) {
 
     SDL_SetMainReady();
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1");
-    if (SDL_Init(SDL_INIT_VIDEO) != 0) { fprintf(stderr, "SDL: %s\n", SDL_GetError()); return 1; }
+    if (SDL_Init(SDL_INIT_VIDEO) != 0) { start_failed("SDL couldn't start"); return 1; }
     win = SDL_CreateWindow("Championship Manager 97/98 - Setup", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, W, H,
                            SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
-    if (!win) { fprintf(stderr, "SDL: %s\n", SDL_GetError()); return 1; }
+    if (!win) { start_failed("The setup window couldn't be opened"); return 1; }
     {   /* window / taskbar icon (on Windows the .exe's own icon comes from icon/cm9798setup.rc) */
         SDL_Surface *ic = SDL_CreateRGBSurfaceWithFormatFrom((void *)setup_icon_rgba, SETUP_ICON_W, SETUP_ICON_H, 32,
                                                              SETUP_ICON_W * 4, SDL_PIXELFORMAT_RGBA32);

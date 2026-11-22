@@ -1,4 +1,9 @@
 cmake_minimum_required(VERSION 3.16)
+# macOS: run on macOS 11 (Big Sur, the first for Apple Silicon) and later, whatever macOS builds it (Apple's
+# tools would otherwise require the building Mac's own version). Set before project(), as CMake needs.
+if(CMAKE_HOST_APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
+  set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "The oldest macOS the programs run on")
+endif()
 project(cm9798 C)
 
 # Recompiled Championship Manager 97/98 (CM2E16.EXE) as a native 64-bit program.
@@ -30,6 +35,10 @@ endif()
 if(CMAKE_C_COMPILER MATCHES "zig")
   add_compile_options(-fno-sanitize=undefined)
   add_link_options(-O2 -fno-sanitize=undefined)
+  # Without a -target (as on Windows) Zig builds for this PC's own processor (AVX-512 and the like), and
+  # the programs then quit silently on players' older ones: build for any processor of the kind instead
+  add_compile_options(-mcpu=baseline)
+  add_link_options(-mcpu=baseline)
   # Linux: CMake can't ask Zig for the system's library folder name, so find_package wouldn't look in
   # /usr/lib/x86_64-linux-gnu (Debian, Ubuntu) for SDL2's files
   if(UNIX AND NOT APPLE AND NOT CMAKE_LIBRARY_ARCHITECTURE)
