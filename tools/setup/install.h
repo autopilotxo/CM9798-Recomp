@@ -4,12 +4,18 @@
 
 typedef void (*install_log_fn)(const char *text);   /* progress text, may hold several lines */
 
+/* CM2's league editions: six 1995/96 ones (the European Leagues CD) and two 1996/97 releases, and
+   Liga Portuguesa a second time, for the 1995/96 database */
+#define INSTALL_NEDITIONS 9
+
 struct install_opts {
     char src[1100];        /* the player's CM 97/98 folder (read only) */
     char dst[1100];        /* the folder to set up */
     char cm2[1100];        /* Championship Manager 2 folders to import (either edition in either), or "" */
     char cm96[1100];
-    char euro[8][1100];    /* CM2's league editions (any order, "" skipped): each goes into the import of its season */
+    char euro[INSTALL_NEDITIONS][1100];   /* CM2's league editions, in install_edition()'s order ("" skipped): each
+                                             goes into the import of its season; any other edition in a slot goes
+                                             into its own season's */
     char port_dir[1100];   /* where cm9798(.exe) and its libraries are, to copy along, or "" */
 };
 
@@ -19,13 +25,13 @@ int install_check_source(const char *dir, char *msg, size_t n);
 int install_check_cm2(const char *dir, char *msg, size_t n);
 /* is this one of CM2's league editions? 1 = yes; msg names it and its season */
 int install_check_euro(const char *dir, char *msg, size_t n);
-/* CM2's league editions: six 1995/96 ones (the European Leagues CD) and two 1996/97 releases */
-#define INSTALL_NEDITIONS 8
 struct install_edition {
     const char *name;        /* "the French edition", "Italian Leagues", "Liga Portuguesa" */
     const char *adjective;   /* "French" (its leagues) */
     const char *country;     /* "France", as cm2_edition_country() says */
-    int season;              /* 1995 (Championship Manager 2) or 1996 (the 96/97 Update) */
+    int season;              /* the database it adds to: 1995 (Championship Manager 2) or 1996 (the 96/97 Update) */
+    int release;             /* the release it takes (install_euro_release): its own, but Liga Portuguesa (1996/97)
+                                also goes into the 1995/96 database */
 };
 const struct install_edition *install_edition(int k);
 /* which edition a folder holds, by its files (an index for install_edition), or -1 */

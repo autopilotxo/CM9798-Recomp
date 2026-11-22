@@ -139,13 +139,20 @@ static void check_fields(void) {
         }
         field[i].ok = seen_ok[k]; snprintf(st, n, "%s", seen_st[k]);
         int base = e->season == 1995 ? F_CM2 : F_CM96;
-        if (!field[i].value[0]) { field[i].ok = 1; snprintf(st, n, "Adds the %s leagues in full to the %s database.", e->adjective, season_name(e->season)); }
-        else if (field[i].ok && seen_r[k] >= 0 && seen_r[k] != k) {
-            const struct install_edition *o = install_edition(seen_r[k]);
+        int borrowed = e->season != install_edition(e->release)->season;    /* Liga Portuguesa in 1995/96 */
+        if (!field[i].value[0]) { field[i].ok = 1;
+            if (borrowed) snprintf(st, n, "%s (1996/97) adds its Portuguese leagues to the %s database too.", e->name, season_name(e->season));
+            else snprintf(st, n, "Adds the %s leagues in full to the %s database.", e->adjective, season_name(e->season)); }
+        else if (field[i].ok && seen_r[k] >= 0 && seen_r[k] != e->release) {
+            int to = F_EU0 + seen_r[k];                              /* its box: on this tab if it has one here */
+            for (int k2 = 0; k2 < INSTALL_NEDITIONS; k2++) if (install_edition(k2)->release == seen_r[k] && field_tab(F_EU0 + k2) == field_tab(i)) to = F_EU0 + k2;
+            const struct install_edition *o = install_edition(to - F_EU0);
             field[i].ok = 0;
-            snprintf(st, n, "That's %s - it goes in the %s box%s.", o->name, field[F_EU0 + seen_r[k]].label,
-                     field_tab(F_EU0 + seen_r[k]) != field_tab(i) ? (o->season == 1995 ? " on the CM2 tab" : " on the CM 96/97 tab") : ""); }
-        else if (field[i].ok && !field[base].value[0])
+            snprintf(st, n, "That's %s - it goes in the %s box%s.", o->name, field[to].label,
+                     field_tab(to) != field_tab(i) ? (o->season == 1995 ? " on the CM2 tab" : " on the CM 96/97 tab") : ""); }
+        else if (field[i].ok && borrowed)
+            snprintf(st, n, "%s found - adds its Portuguese leagues to the %s database (with 1996/97's squads).", e->name, season_name(e->season));
+        if (field[i].ok && field[i].value[0] && !field[base].value[0])
             snprintf(st, n, "Found - give the %s folder above too: it adds to that database.", base == F_CM2 ? "Championship Manager 2" : "CM2 96/97 Update");
     }
     const char *d = field[F_DST].value;
@@ -265,7 +272,11 @@ static int pick_folder(const char *titletext, const char *start, char *out, size
 static int classify(const char *d) {
     char msg[300];
     if (install_check_source(d, msg, sizeof msg) || strstr(msg, "version")) return F_SRC;
-    if (install_check_euro(d, msg, sizeof msg)) { int r = install_euro_release(d); return r >= 0 ? F_EU0 + r : -1; }
+    if (install_check_euro(d, msg, sizeof msg)) {
+        int r = install_euro_release(d); if (r < 0) return -1;
+        for (int k = 0; k < INSTALL_NEDITIONS; k++)            /* on the CM2 tab, Liga Portuguesa's 1995/96 box */
+            if (install_edition(k)->release == r && field_tab(F_EU0 + k) == tab) return F_EU0 + k;
+        return F_EU0 + r; }
     if (install_check_cm2(d, msg, sizeof msg)) { int y = 1995, dd, mm; cm2_detect(d, &y, &dd, &mm); return y >= 1996 ? F_CM96 : F_CM2; }
     return -1;
 }
@@ -380,7 +391,7 @@ int main(int argc, char **argv) {
     snprintf(field[F_CM96].label, 80, "CM2 96/97 Update folder (optional - the 1996/97 English and Scottish leagues)");
     for (int k = 0; k < INSTALL_NEDITIONS; k++) {      /* "French"; "Italian Leagues", "Liga Portuguesa" */
         const struct install_edition *e = install_edition(k);
-        snprintf(field[F_EU0 + k].label, 80, "%s", e->season == 1995 ? e->adjective : e->name); }
+        snprintf(field[F_EU0 + k].label, 80, "%s", !strncmp(e->name, "the ", 4) ? e->adjective : e->name); }
 #ifdef _WIN32
     snprintf(field[F_DST].value, sizeof field[F_DST].value, "%s", base_dir);        /* next to the port */
 #else
@@ -438,8 +449,9 @@ int main(int argc, char **argv) {
                         if (inside(x, y, field[i].browse.r)) {
                             char p[1100], ttl[160];
                             if (i >= F_EU0) { const struct install_edition *e = install_edition(i - F_EU0);
-                                              snprintf(ttl, sizeof ttl, "Championship Manager 2: %s", e->season == 1995 ? e->adjective : e->name);
-                                              if (e->season == 1995) snprintf(ttl + strlen(ttl), sizeof ttl - strlen(ttl), " edition"); }
+                                              int ed = !strncmp(e->name, "the ", 4);
+                                              snprintf(ttl, sizeof ttl, "Championship Manager 2: %s", ed ? e->adjective : e->name);
+                                              if (ed) snprintf(ttl + strlen(ttl), sizeof ttl - strlen(ttl), " edition"); }
                             else snprintf(ttl, sizeof ttl, "%s", field[i].label);
                             if (pick_folder(ttl, usable_start(field[i].value) ? field[i].value : last_pick, p, sizeof p)) {
                                 snprintf(field[i].value, sizeof field[i].value, "%s", p); snprintf(last_pick, sizeof last_pick, "%s", p); check_fields(); }
