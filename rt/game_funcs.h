@@ -26,6 +26,7 @@ uint32_t next_host_name(void);  /* patches.txt, rt/ */
 uint32_t calendar_old_buffer(void);  /* patches.txt, rt/ */
 uint32_t calendar_pack(void);  /* patches.txt, rt/ */
 uint32_t competition_menu_tail(void);  /* patches.txt, rt/ */
+uint32_t transfers_menu_tail(void);  /* patches.txt, rt/ */
 uint32_t first_season_year(void);  /* patches.txt, rt/ */
 uint32_t fixtures_old_buffer(void);  /* patches.txt, rt/ */
 uint32_t fixtures_pack(void);  /* patches.txt, rt/ */
@@ -33,6 +34,8 @@ void hook_change_database(void);  /* patches.txt, rt/ */
 void hook_check_leagues(void);  /* patches.txt, rt/ */
 void hook_commentary_event(void);  /* patches.txt, rt/ */
 void hook_competition_choice(void);  /* patches.txt, rt/ */
+void hook_transfers_enter(void);  /* patches.txt, rt/ */
+void hook_transfers_choice(void);  /* patches.txt, rt/ */
 void hook_crowd_start(void);  /* patches.txt, rt/ */
 void hook_crowd_stop(void);  /* patches.txt, rt/ */
 void hook_intro_done(void);  /* patches.txt, rt/ */
