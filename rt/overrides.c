@@ -504,3 +504,39 @@ void hook_competition_choice(void) {
         eax = (eax & ~0xFFu) | 13u; edx = 13; WR8(esp + 0x10, 13);
     }
 }
+
+/* ---- Player Search & Transfers with nine leagues ----
+   The screen (0x1012194) builds its list on the stack: "Player Search*0|View Shortlist*1|Latest Transfers*2|"
+   (0x10e2694), one "<country> Transfers*3..10|" per country run (English and Scottish share "British"),
+   then "Other Transfers*11|Players Released*12|" (0x10e2784). Nine leagues make 13 buttons, one more than
+   the menu builder (0x10141f0) takes, and the screen came up empty. Then the countries move into a second
+   list behind "Transfers by Country*13|", as on Competition Info. */
+static int tr_country;
+void hook_transfers_enter(void) { tr_country = 0; }
+uint32_t transfers_menu_tail(void) {
+    const uint32_t buf = esp, tail = 0x10e2784u;
+    int n = 0; for (uint32_t a = buf; RD8(a); a++) if (RD8(a) == '|') n++;
+    if (n + 2 <= 12) { tr_country = 0; return tail; }     /* the original list fits */
+    char t[400]; size_t k = 0;
+    for (uint32_t a = buf; RD8(a) && k < sizeof t - 1; a++) t[k++] = (char)RD8(a);
+    t[k] = 0;
+    const char *countries = t;                             /* after the third entry */
+    for (int bars = 0; *countries && bars < 3; countries++) if (*countries == '|') bars++;
+    char out[400];
+    if (tr_country) snprintf(out, sizeof out, "%s", countries);
+    else {
+        char first[200]; snprintf(first, sizeof first, "%.*s", (int)(countries - t), t);
+        snprintf(out, sizeof out, "%sTransfers by Country*13|", first);
+    }
+    WR8(buf, 0); guest_strcat(buf, out);
+    if (tr_country) { uint32_t end = tail; while (RD8(end)) end++; return end; }   /* "": no Other/Released */
+    return tail;                                           /* the game appends Other Transfers, Players Released */
+}
+void hook_transfers_choice(void) {                         /* after the choice is stored at 0x190(%esp) */
+    int8_t c = (int8_t)(eax & 0xFF);
+    if (c == 13) { tr_country = 1; return; }
+    if (tr_country && c == 0x63) {                         /* Done in the countries: back to the first list */
+        tr_country = 0;
+        eax = (eax & ~0xFFu) | 13u; edx = 13; WR8(esp + 0x190, 13);
+    }
+}

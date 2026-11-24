@@ -163,6 +163,13 @@
 # behind a "Domestic Competitions" button (id 13, which the dispatch ignores, so the screen is rebuilt).
 010bee replace esi = competition_menu_tail();
 010ca5 after hook_competition_choice();
+# Player Search & Transfers: the same limit. Three searches, one "Transfers" button per country run (England
+# and Scotland share "British"), "Other Transfers" and "Players Released": nine leagues make 13. With more than
+# twelve the countries go behind "Transfers by Country" (id 13: the dispatch takes 3..12, so the screen is
+# rebuilt); Done there comes back to the first list.
+0121a0 after hook_transfers_enter();
+01236c replace esi = transfers_menu_tail();
+012420 after hook_transfers_choice();
 # Sound (rt/sound.c): CM2's crowd and whistles. The crowd starts at kick-off (where CM2 starts it; 97/98's
 # own start, gated by a flag nothing sets, follows), stops where 97/98 ends its sample, and each line of
 # commentary gives its event number (ax) for the cheers, boos, gasps and whistles.
