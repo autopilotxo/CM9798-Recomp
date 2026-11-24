@@ -36,6 +36,8 @@ void hook_commentary_event(void);  /* patches.txt, rt/ */
 void hook_competition_choice(void);  /* patches.txt, rt/ */
 void hook_transfers_enter(void);  /* patches.txt, rt/ */
 void hook_transfers_choice(void);  /* patches.txt, rt/ */
+void hook_select_team_layout_args(void);  /* patches.txt, rt/ */
+void hook_select_team_layout_pop(void);  /* patches.txt, rt/ */
 void hook_crowd_start(void);  /* patches.txt, rt/ */
 void hook_crowd_stop(void);  /* patches.txt, rt/ */
 void hook_intro_done(void);  /* patches.txt, rt/ */

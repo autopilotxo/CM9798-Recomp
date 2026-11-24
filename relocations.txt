@@ -216,6 +216,11 @@ imm 0x010665b8 0x270f 0x3e7f       # genfictplyr: the last id it may use
 imm 0x0103a57d 0x2710 0x3e80       # load_pldata 2: the table is full
 imm 0x0105583d 0x2710 0x3e80       # a player id is in range
 imm 0x0103c0eb 0x270f 0x3e7f       # creat_plhist: one empty history record per possible id
+# How many of the database's players a new game keeps (0x39b98, the PFLTR_PLDATA filter): 2475 a league
+# played, at least 5000 and no more than 9900 - reached with four leagues, while the nine leagues' clubs
+# alone have about 9800 players in the 97/98 database, so with more than four the smallest clubs were
+# left with a handful or none. 14000 keeps them, with ids to spare for the young players made each season.
+imm 0x01039fc6 0x26ac 0x36b0
 # Lists with one entry per player, sized for 10000 in the original:
 # a search list of (id word, double) at 0x11d0820, filled by a loop over every player (now at 0x5610000)
 move 0x011d081e 0x011e8ebe 0x0560fffe

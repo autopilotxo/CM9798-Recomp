@@ -220,3 +220,11 @@
 # After a final the next host comes from a list that starts with 2002; a final before 1998 read in
 # front of it.
 03270a replace eax = next_host_name();
+
+# Select Team (Squad Details, and choosing a club): 45 clubs a page, and the page buttons along the bottom
+# are laid out (0x171e8) from a fixed list of widths: Done's, then ten pages'. Nine leagues' non-league
+# clubs (488 in the 97/98 database) make eleven pages, and the layout read past the list into the caller's
+# stack: the button got a nonsense size, and drawing it wrote far outside the screen. Now the list has a
+# width for every page (rt/overrides.c).
+075b2f replace hook_select_team_layout_args();
+075b35 replace hook_select_team_layout_pop();

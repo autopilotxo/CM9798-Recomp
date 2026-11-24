@@ -540,3 +540,19 @@ void hook_transfers_choice(void) {                         /* after the choice i
         eax = (eax & ~0xFFu) | 13u; edx = 13; WR8(esp + 0x190, 13);
     }
 }
+
+/* ---- Select Team with more than ten pages ----
+   0x1075b2f pushes the number of buttons on the bottom bar (Done and one per page) on top of eleven
+   widths already pushed (Done's 3, ten pages' 1). With more than ten pages the layout routine read
+   widths past them. In its place: as many widths as buttons, and the matching pop after the call. */
+static uint32_t st_extra;                                   /* bytes pushed beyond the original 0x30 */
+void hook_select_team_layout_args(void) {                   /* for "push %eax" */
+    uint32_t n = eax;
+    if ((int32_t)n <= 11) { st_extra = 0; esp -= 4; WR32(esp, n); return; }
+    if (n > 40) n = 40;                                     /* the button tables hold 50 */
+    st_extra = 4 * (n - 11);
+    esp -= 4 + st_extra;                                    /* the block now ends where the original did */
+    WR32(esp, n); WR32(esp + 4, 3);
+    for (uint32_t k = 0; k < n - 1; k++) WR32(esp + 8 + 4 * k, 1);
+}
+void hook_select_team_layout_pop(void) { esp += 0x30 + st_extra; st_extra = 0; }
