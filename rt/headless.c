@@ -288,6 +288,7 @@ void host_set_database(int start_year) { fprintf(stderr, "[database] now startin
    CM_BK_RESTORE=<slot> restores that saved game's newest backup. */
 #include "backup.h"
 #include "database.h"
+void host_recomp_options(void) { fprintf(stderr, "[options] Recomp Options chosen\n"); }
 void host_restore_backup(void) {
     const char *e = getenv("CM_BK_RESTORE");
     fprintf(stderr, "[backup] Restore Backup chosen\n");

@@ -1206,6 +1206,8 @@ int host_choose_database(void) {
 int host_pick_database(void) { return dbp_run("Edit Which Database?", "Edit"); }
 
 void host_restore_backup(void) { bk_run(); }     /* overrides.c: the Options screen's Restore Backup */
+static void menu_run(void);
+void host_recomp_options(void) { menu_run(); }   /* overrides.c: the in-game Save Game & Options' Recomp Options */
 
 /* ---- player screen: the star rating in the blue position bar (rt/stars.c) ----
    Drawn as shapes at the window's own resolution, so it is sharp at any size: a full star per two

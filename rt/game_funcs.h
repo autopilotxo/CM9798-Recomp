@@ -61,6 +61,8 @@ void hook_save_tmdata_begin(void);  /* patches.txt, rt/ */
 void hook_text_glyph(void);  /* patches.txt, rt/ */
 void hook_trim_histories(void);
 void hook_repair_histories(void);  /* patches.txt, rt/ */
+uint32_t ingame_options_tail(void);
+void hook_ingame_options_choice(void);
 uint32_t match_speed_divisor(void);  /* patches.txt, rt/ */
 uint32_t max_leagues(void);  /* patches.txt, rt/ */
 uint32_t options_menu_tail(void);  /* patches.txt, rt/ */

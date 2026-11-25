@@ -341,6 +341,18 @@ void hook_options_choice(void) {                 /* after the menu's "is it Hall
     reload_slot_list();                          /* names and empty slots may have changed */
 }
 
+/* ---- In-game "Save Game & Options": Recomp Options (patches.txt 012595, 012632) ---- */
+#define INGAME_OPTIONS_TAIL 0x00028100u          /* after the Options screen's (above) */
+uint32_t ingame_options_tail(void) {
+    static const char menu[] = "Credits|CM Fan Club|Recomp Options";
+    memcpy(&M[INGAME_OPTIONS_TAIL], menu, sizeof menu);
+    return INGAME_OPTIONS_TAIL;
+}
+void host_recomp_options(void);                  /* sdl.c: the F1 menu; headless.c */
+void hook_ingame_options_choice(void) {          /* after the choice is stored at 0xc8(%esp) */
+    if ((int8_t)(eax & 0xFF) == 3) host_recomp_options();
+}
+
 /* How many leagues a new game may run (patches.txt 045817). The 16MB build's own limit is 3, and the
  * game's tables stop at 5 (6 gets stuck on the first day, 7 or more runs out of league-table slots:
  * "alloctabs 1"). With relocations.txt's bigger tables, calendar, fixtures, competitions, club and player
