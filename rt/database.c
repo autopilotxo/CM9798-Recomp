@@ -57,7 +57,7 @@
 
 #define MAXDB 16
 static const char *const db_files[] = { "players.db1", "tmdata.db1", "mgdata.db1", "plhist98.bin", NULL };
-static struct db { char dir[64], name[48], leagues[160]; int start, day, month, own_sounds; } dbs[MAXDB];
+static struct db { char dir[64], name[48], leagues[160]; int start, day, month, own_sounds, imported; } dbs[MAXDB];
 static int ndb, sel = -1, scanned, in_frontend, career = -1;   /* career: database of the game being played */
 static char choice[64] = "9798";
 
@@ -141,6 +141,7 @@ static void read_info(struct db *d, const char *path) {
             d->start = y; d->day = dd; d->month = mm; }
         else if (sscanf(line, " leagues = %127[^\r\n]", v) == 1) snprintf(d->leagues, sizeof d->leagues, " %s ", v);
         else if (sscanf(line, " sounds = %127s", v) == 1) d->own_sounds = !strcasecmp(v, "own");
+        else if (sscanf(line, " importer = %127s", v) == 1) d->imported = 1;   /* made from CM2 by the setup */
     }
     fclose(f);
 }
@@ -375,7 +376,7 @@ int db_players(void) {
    moves on, starting with STADPIC2 when a game begins; and on a club's screens the club's own picture
    (its name, spaces and dots as "_", 8 letters, .PCX) if there is one, else the stadium picture.
    Here every picture 97/98 asks for (generic, country, competition, trophy, club, title screens) becomes
-   that: a CM2 picture of the same name if a CM2 database's pictures folder has one (the clubs; the setup
+   that: a CM2 picture of the same name if a CM2 pictures folder has one (cm2_pic_dir says which; the clubs: the setup
    copies CM2's club pictures and STADPIC1-5 there), else today's STADPIC. Only the publishers' logo
    screens stay. With no STADPIC files anywhere, 97/98's pictures are used as before. */
 int g_cm2_backgrounds;
@@ -387,6 +388,11 @@ static long bg_days(int y, int m, int d) {          /* days since 1970-01-01 */
     long doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1; long doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
     return era * 146097 + doe - 719468;
 }
+/* Which folders: a database's own pictures are used only while that database is in use. First the
+   pictures folder of the database being played (if it isn't 97/98's, which has no CM2 pictures); then,
+   for whatever it doesn't have, the databases the setup imported from CM2 (database.cfg "importer =
+   ..."; 9596), the defaults; then the game folder (STADPICn put there by hand). A database made by
+   hand (no importer line) lends its pictures to no other database. */
 static int cm2_pic_dir(int k, char *dir, size_t n, int game_folder) {   /* k-th folder of CM2 pictures (0: none left) */
     int use = !in_frontend && career >= 0 ? career : sel, i = 0;
     if (use >= 0 && strcmp(dbs[use].dir, "9798")) {    /* the database being played first, if it's a CM2 one */
@@ -394,10 +400,10 @@ static int cm2_pic_dir(int k, char *dir, size_t n, int game_folder) {   /* k-th 
         k--;
     }
     for (i = 0; i < ndb; i++) {
-        if (i == use || !strcmp(dbs[i].dir, "9798")) continue;
+        if (i == use || !strcmp(dbs[i].dir, "9798") || !dbs[i].imported) continue;
         if (k-- == 0) { snprintf(dir, n, "%s/databases/%s/pictures", cm_game_dir(), dbs[i].dir); return 1; }
     }
-    if (game_folder && k == 0) { snprintf(dir, n, "%s", cm_game_dir()); return 1; }   /* STADPICn put there by hand */
+    if (game_folder && k == 0) { snprintf(dir, n, "%s", cm_game_dir()); return 1; }   /* STADPIC1-5 put there by hand */
     return 0;
 }
 static int cm2_find(const char *b, char *host, size_t n, int game_folder) {   /* (the game folder holds 97/98's) */
