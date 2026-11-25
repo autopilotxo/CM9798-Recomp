@@ -103,6 +103,9 @@
 # it took out every final played since the career began, each time the game was loaded.
 045167 after hook_trim_histories();
 04518a after hook_trim_histories();
+# ...and after that third call, careers saved before this was fixed get their finals back from the
+# club histories (hook_repair_histories; nothing changes in a list that is already right).
+045426 after hook_repair_histories();
 
 # Player screen: a star rating in the blue position bar (rt/stars.c, drawn by rt/sdl.c). The game
 # has just made the bar's text ("Forward (Right/Centre)", in eax) for player esi.

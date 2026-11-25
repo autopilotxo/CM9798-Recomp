@@ -206,7 +206,7 @@ void hook_change_database(void) {
 #define COMP_COUNT  A(0xA3AF2C)
 #define COMP_ROOM   128                                  /* relocations.txt: room for 128 competitions */
 #define HIST_OFF    0x5BA
-#define HIST_MAX    ((COMP_SIZE - HIST_OFF) / 8)
+#define HIST_MAX    ((COMP_SIZE - 0x1A - HIST_OFF) / 8)       /* 64: the list runs to the record's end */
 void hook_trim_histories(void) {
     int last = start_year() - 1900;                     /* the latest final there can be: May of the start year */
     if (last >= 97) return;                              /* 97/98: the lists end there anyway */
@@ -231,6 +231,92 @@ void hook_trim_histories(void) {
         }
     }
     fprintf(stderr, "histories: %d results after May %d taken out (career starts %d)\n", removed, 1900 + last, start_year());
+}
+
+/* ---- repairing those histories in saved careers (patches.txt: after Restore Game loads them) ----
+ * Until 1.1.0 the trim above also ran when a game was loaded, so a 95/96 or 96/97 career lost every final
+ * played since it began each time it was loaded, and its August-December finals of the first year were
+ * there twice. The finals can be put back from the save's club histories (clhistN.S16): a record of 0x13DD
+ * bytes per club, 15 seasons of 339 bytes, newest first: year (word: 95 = 1995/96), the league's
+ * competition number, the place, ..., and from +14 a 3-byte entry per competition number: year (word),
+ * then 100 = won it, 101 = runner-up, else the round reached. A final is added only where the list has
+ * none for its year and both clubs are known (clubs from countries not played keep no history); a year
+ * twice in an August-December competition loses the second (the database's, as the game's is first).
+ * Lists that are right are left as they are, so this does nothing to a game saved by 1.1.0 or later. */
+#define CLH_REC   0x13DD
+#define CLH_SEASON 339
+#define CLH_SEASONS 15
+static int late_final(const char *name) {           /* a final in the second half of the year (see above) */
+    static const char *const late[] = { "W/Club Cup", "Charity Shield", "SC/Cola Cup", "L/Chal Cup", "Supercoppa Italiana",
+        "Super Copa Espa\xf1ola", "Supertaça", "Superta\xe7" "a", "German Liga-Cup", "Super Cup van Belgi\xeb", "Johan C-s", NULL };
+    for (int i = 0; late[i]; i++) if (!strcmp(name, late[i])) return 1;
+    return 0;
+}
+void hook_repair_histories(void) {
+    int first = start_year() - 1900;                     /* the career's first season (95 = 1995/96) */
+    if (first >= 97) return;                              /* 97/98 careers were never trimmed */
+    int slot = RD8(A(0xA44977)); if (slot < 1 || slot > 9) return;
+    char dir[1300], path[1400]; FILE *f = NULL;
+    cm_slot_dir(slot, 0, dir, sizeof dir);
+    for (int v = 0; v < 2 && !f; v++) { snprintf(path, sizeof path, v ? "%s/CLHIST%d.S16" : "%s/clhist%d.S16", dir, slot); f = fopen(path, "rb"); }
+    if (!f) return;
+    int n = (int)(int16_t)RD16(COMP_COUNT); if (n > COMP_ROOM) n = COMP_ROOM;
+    /* winners and runners-up by competition and season, from every club's record */
+    enum { SEAS = 8 };
+    static int16_t win[COMP_ROOM][SEAS], run[COMP_ROOM][SEAS];
+    for (int c = 0; c < COMP_ROOM; c++) for (int k = 0; k < SEAS; k++) win[c][k] = run[c][k] = -1;
+    static uint8_t r[CLH_REC]; int club = 0;
+    while (fread(r, 1, CLH_REC, f) == CLH_REC) {
+        for (int b = 0; b < CLH_SEASONS; b++) {
+            const uint8_t *x = r + b * CLH_SEASON; int s = x[0] | x[1] << 8, k = s - first;
+            if (!s || k < 0 || k >= SEAS) continue;
+            int lg = x[2], place = x[3];
+            if (lg < n && place == 1) win[lg][k] = (int16_t)club;
+            if (lg < n && place == 2) run[lg][k] = (int16_t)club;
+            for (int c = 0; c < n && 14 + 3 * c + 2 < CLH_SEASON; c++) {
+                const uint8_t *e = x + 14 + 3 * c;
+                if ((e[0] | e[1] << 8) != s) continue;
+                if (e[2] == 100) win[c][k] = (int16_t)club;
+                if (e[2] == 101) run[c][k] = (int16_t)club;
+            }
+        }
+        club++;
+    }
+    fclose(f);
+    int added = 0, dropped = 0;
+    for (int c = 0; c < n; c++) {
+        uint32_t rec = COMP_BASE - 0x1A + (uint32_t)c * COMP_SIZE, h = rec + 0x1A + HIST_OFF;
+        char name[48]; uint32_t np = RD32(rec + 8); int ln = 0;
+        for (; np && ln < 47 && RD8(np + (uint32_t)ln); ln++) name[ln] = (char)RD8(np + (uint32_t)ln);
+        name[ln] = 0;
+        int late = late_final(name);
+        uint8_t e[HIST_MAX][8]; int m = 0;
+        for (; m < HIST_MAX && RD8(h + (uint32_t)m * 8); m++) for (int q = 0; q < 8; q++) e[m][q] = RD8(h + (uint32_t)m * 8 + (uint32_t)q);
+        int was = m, changed = 0;
+        if (late) for (int i = 1; i < m; i++) if (e[i][0] == e[i - 1][0]) {        /* the same year twice */
+            memmove(e[i], e[i + 1], (size_t)(m - i - 1) * 8); m--; i--; dropped++; changed = 1;
+        }
+        for (int k = 0; k < SEAS; k++) {
+            if (win[c][k] < 0 || run[c][k] < 0) continue;
+            int y = first + k + (late ? 0 : 1);              /* the year of the final: May after the season, or its own */
+            int at = 0, have = 0;
+            for (int i = 0; i < m; i++) { if (e[i][0] == y) have = 1; if (e[i][0] > y) at = i + 1; }
+            if (have || m >= HIST_MAX) continue;
+            memmove(e[at + 1], e[at], (size_t)(m - at) * 8); m++;
+            memset(e[at], 0, 8); e[at][0] = (uint8_t)y;
+            e[at][3] = (uint8_t)win[c][k]; e[at][4] = (uint8_t)(win[c][k] >> 8);
+            e[at][5] = (uint8_t)run[c][k]; e[at][6] = (uint8_t)(run[c][k] >> 8);
+            added++; changed = 1;
+        }
+        if (!changed) continue;
+        for (int i = 0; i < HIST_MAX; i++) for (int q = 0; q < 8; q++) WR8(h + (uint32_t)i * 8 + (uint32_t)q, i < m ? e[i][q] : 0);
+        (void)was;
+    }
+    if (added || dropped) {
+        char t[160]; snprintf(t, sizeof t, "Competition histories repaired: %d final%s put back", added, added == 1 ? "" : "s");
+        fprintf(stderr, "histories: %d finals put back from the club histories, %d duplicates taken out\n", added, dropped);
+        extern void host_notify(const char *text); host_notify(t);
+    }
 }
 
 /* ---- Options screen: "Restore Backup" (patches.txt) ----

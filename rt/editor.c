@@ -206,7 +206,7 @@ void host_database_editor(void) {
 #endif
         snprintf(t, sizeof t, "The Database Editor is Championship Manager 2's own editor, and needs two of its files in "
                  "the game folder:\n\n    CM2ED.EXE%s\n    GAZZA.PCX%s\n\nCopy them from Championship Manager 97/98 (its "
-                 "CD or folder) into:\n%s\n\nthen set the game up again with cm9798setup, so it is made with the editor.",
+                 "CD or folder) into:\n%s\n\nthen click Database Editor again.",
                  have_exe ? "  (found)" : "  (missing)", have_pic ? "  (found)" : "  (missing)", dir);
         host_message("Database Editor", t);
         return;

@@ -59,7 +59,8 @@ void hook_save_club_comps(void);  /* patches.txt, rt/ */
 void hook_save_more_tables(void);  /* patches.txt, rt/ */
 void hook_save_tmdata_begin(void);  /* patches.txt, rt/ */
 void hook_text_glyph(void);  /* patches.txt, rt/ */
-void hook_trim_histories(void);  /* patches.txt, rt/ */
+void hook_trim_histories(void);
+void hook_repair_histories(void);  /* patches.txt, rt/ */
 uint32_t match_speed_divisor(void);  /* patches.txt, rt/ */
 uint32_t max_leagues(void);  /* patches.txt, rt/ */
 uint32_t options_menu_tail(void);  /* patches.txt, rt/ */
