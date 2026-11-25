@@ -62,7 +62,7 @@ extern char **environ;
 #include "../setup/font_data.h"
 #endif
 
-#define LAUNCHER_VERSION "1"
+#define LAUNCHER_VERSION "2"
 #define GAME_NAME "cm9798-game" EXE
 
 static char progdir[1100], kit[1200], logpath[1300];
@@ -521,17 +521,17 @@ static int build(const char *exe, char *err, size_t errn) {
 #endif
     }
 #ifdef __linux__
-    /* Systems without C headers (SteamOS: no /usr/include): the bundled Zig, asked for the system's own
-       kind of Linux by name, uses the C library headers it carries instead of looking for the system's.
-       The glibc version is this system's (Zig provides the newest it knows if this one is newer). */
-    if (!(env_cc && *env_cc) && cc.n >= 2 && !strcmp(cc.v[1], "cc") && strstr(cc.v[0], "zig") &&
-        !is_file("/usr/include/stdlib.h")) {
+    /* The bundled Zig is always asked for this system's kind of Linux by name (-target
+       <arch>-linux-gnu.<glibc version>): then it uses the C library headers it carries, as the release's
+       own library was built, and never looks for the system's. (SteamOS has none: without a target,
+       Zig stops with LibCStdLibHeaderNotFound.) Zig provides the newest glibc it knows if this one is newer. */
+    if (!(env_cc && *env_cc) && cc.n == 2 && !strcmp(cc.v[1], "cc") && strstr(cc.v[0], "zig")) {
         char ver[32] = "", t[96]; struct utsname u;
         size_t L = confstr(_CS_GNU_LIBC_VERSION, ver, sizeof ver);   /* "glibc 2.41" */
         const char *v = L && L <= sizeof ver ? strrchr(ver, ' ') : NULL;
         snprintf(t, sizeof t, "%s-linux-gnu%s%s", uname(&u) ? "x86_64" : u.machine, v ? "." : "", v ? v + 1 : "");
         arg(&cc, "-target"); arg(&cc, t);
-        logf_("no C headers in /usr/include: compiling with the compiler's own (-target %s)\n", t);
+        logf_("compiling for %s (the compiler's own C library headers)\n", t);
     }
 #endif
     set_env("ZIG_GLOBAL_CACHE_DIR", cache); set_env("ZIG_LOCAL_CACHE_DIR", cache);
