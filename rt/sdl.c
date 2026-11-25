@@ -1078,6 +1078,9 @@ static void star_check(const uint8_t *p, int w, int h, int st) {
     star_n = 0;
     if (!g_show_stars || w != 640 || h != 480 || g_star_player < 0 || !g_star_text[0]) return;
     if (!text_find(p, st, g_star_text, &x0, &y0, &x1, &y1) || y0 < 98 || y1 > 132) return;
+    /* the bar is one button across the screen, its text centred - not, say, Player Search's
+       "Goalkeepers" filter button in the same row, which holds a goalkeeper's "Goalkeeper" */
+    if (abs((x0 + x1) / 2 - w / 2) > 16) return;
     star_n = player_stars((uint32_t)g_star_player);
 }
 static void star_poly(float cx, float cy, float R, float px[10], float py[10]) {
