@@ -44,6 +44,9 @@
 #include <spawn.h>
 #include <signal.h>
 #include <sys/wait.h>
+#ifdef __linux__
+#include <sys/utsname.h>
+#endif
 #define MKDIR(p) mkdir(p, 0755)
 #define EXE ""
 extern char **environ;
@@ -517,6 +520,20 @@ static int build(const char *exe, char *err, size_t errn) {
         snprintf(err, errn, "The compiler that makes the game is missing:\n%s\n\nPlease set the game up again with cm9798setup.", cc.v[0]); return -1;
 #endif
     }
+#ifdef __linux__
+    /* Systems without C headers (SteamOS: no /usr/include): the bundled Zig, asked for the system's own
+       kind of Linux by name, uses the C library headers it carries instead of looking for the system's.
+       The glibc version is this system's (Zig provides the newest it knows if this one is newer). */
+    if (!(env_cc && *env_cc) && cc.n >= 2 && !strcmp(cc.v[1], "cc") && strstr(cc.v[0], "zig") &&
+        !is_file("/usr/include/stdlib.h")) {
+        char ver[32] = "", t[96]; struct utsname u;
+        size_t L = confstr(_CS_GNU_LIBC_VERSION, ver, sizeof ver);   /* "glibc 2.41" */
+        const char *v = L && L <= sizeof ver ? strrchr(ver, ' ') : NULL;
+        snprintf(t, sizeof t, "%s-linux-gnu%s%s", uname(&u) ? "x86_64" : u.machine, v ? "." : "", v ? v + 1 : "");
+        arg(&cc, "-target"); arg(&cc, t);
+        logf_("no C headers in /usr/include: compiling with the compiler's own (-target %s)\n", t);
+    }
+#endif
     set_env("ZIG_GLOBAL_CACHE_DIR", cache); set_env("ZIG_LOCAL_CACHE_DIR", cache);
     if (read_args("cflags.txt", &cfl, err, errn) <= 0) {
         const char *d[] = { "-O1", "-w", "-std=c11", "-fno-strict-aliasing", "-fwrapv", NULL };
