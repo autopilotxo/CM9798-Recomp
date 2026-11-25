@@ -64,8 +64,13 @@ static void cfg_load(void) {
     extern const char *g_game_dir;                /* settings live in the game folder, next to CM2E16.EXE */
     snprintf(cfg_path, sizeof cfg_path, "%s/cm9798.cfg", g_game_dir);
     FILE *f = fopen(cfg_path, "r"); if (!f) return;
-    char line[128], v[64];
+    char line[1200], v[64], path[1100];
     while (fgets(line, sizeof line, f)) {
+        if (sscanf(line, " saves = %1099[^\r\n]", path) == 1) {     /* the save folder (may have spaces) */
+            size_t L = strlen(path); while (L && (path[L - 1] == ' ' || path[L - 1] == '\t')) path[--L] = 0;
+            cm_set_saves_root(SDL_strcasecmp(path, "default") ? path : "");
+            continue;
+        }
         if (sscanf(line, " scale = %63s", v) == 1)
             for (int i = 0; i < SCALE_MODES; i++) if (!strcmp(v, scale_names[i])) scale_mode = i;
         if (sscanf(line, " fullscreen = %63s", v) == 1) want_fullscreen = atoi(v) != 0;
@@ -105,6 +110,9 @@ static void cfg_save(void) {
     fprintf(f, "# players a new game keeps (the slider on Choose Leagues to Run): small (9900, as the original) |\n"
                "# medium (14000) | full (20000: the whole 97/98 database) - with five or more leagues\nplayers = %s\n",
             player_size_names[g_player_size >= 0 && g_player_size <= 2 ? g_player_size : 2]);
+    fprintf(f, "# save folder: default (the game folder's saves folder) | a folder of your own, which gets a folder\n"
+               "# per database as saves does (F1, Gameplay, Save folder)\nsaves = %s\n",
+            cm_saves_root_custom()[0] ? cm_saves_root_custom() : "default");
     fclose(f);
 }
 void host_set_database(int start_year) { (void)start_year; cfg_save(); }
@@ -476,13 +484,13 @@ static int speed_hit(int x, int y) {
 static int menu_mx = -1, menu_my = -1;
 extern int g_autosave, g_backup_keep;
 /* two tabs: Graphics (rows 0-3) and Gameplay (rows 4-9) */
-enum { M_WINDOW, M_SCALING, M_TEXT, M_BACKGROUNDS, M_SOUND, M_VOLUME, M_STARS, M_COLOURS, M_AUTOSAVE, M_BACKUPS, M_DONE, M_TAB, M_ROWS };
+enum { M_WINDOW, M_SCALING, M_TEXT, M_BACKGROUNDS, M_SOUND, M_VOLUME, M_STARS, M_COLOURS, M_AUTOSAVE, M_BACKUPS, M_SAVEDIR, M_DONE, M_TAB, M_ROWS };
 static const char *const menu_opts[M_ROWS][4] = {
     { "Window", "Fullscreen" }, { "Integer", "Nearest", "Smooth" }, { "Sharp", "Original" }, { "CM 97/98", "CM 2" }, { "On", "Off" }, { "slider" },
-    { "Your club", "Overall", "Off" }, { "On", "Off" }, { "On", "Off" }, { "Off", "3", "5", "10" }, { 0 }, { 0 } };
+    { "Your club", "Overall", "Off" }, { "On", "Off" }, { "On", "Off" }, { "Off", "3", "5", "10" }, { "Change...", "Default" }, { 0 }, { 0 } };
 static const int backup_counts[4] = { 0, 3, 5, 10 };
 static const char *const menu_names[M_ROWS] = { "Window", "Scaling", "Text", "Backgrounds", "Match sounds", "Volume", "Star ratings", "Coloured stats",
-                                                "Autosave", "Backups per slot", "", "" };
+                                                "Autosave", "Backups per slot", "Save folder", "", "" };
 static const char *const menu_tabs[2] = { "Graphics", "Gameplay" };
 static int menu_tab;                               /* 0 = Graphics, 1 = Gameplay */
 int g_show_stars = 1, g_stat_colours = 1;          /* player screen: star rating, coloured stats */
@@ -509,6 +517,7 @@ static int menu_current(int r) {
     case M_COLOURS: return g_stat_colours ? 0 : 1;
     case M_AUTOSAVE: return g_autosave ? 0 : 1;
     case M_BACKUPS: for (int i = 0; i < 4; i++) if (backup_counts[i] == g_backup_keep) return i; return -1;
+    case M_SAVEDIR: return cm_saves_root_custom()[0] ? -1 : 1;   /* "Default" lit while it is */
     }
     return -1;
 }
@@ -526,6 +535,131 @@ static SDL_Rect menu_button(int r, int i) {
     int n = menu_nopts(r), x0 = MENU_X0 + 170, x1 = MENU_X1 - 16, gap = 4, bw = (x1 - x0 - gap * (n - 1)) / n;
     SDL_Rect b = { x0 + i * (bw + gap), menu_row_y(r), bw, 18 }; return b;
 }
+/* ---- Save folder: the system's own folder picker ----
+   1: a folder chosen (out), 0: cancelled, -1: no picker on this system */
+int host_ask(const char *title, const char *text);
+#ifdef _WIN32
+#include <windows.h>
+#include <shlobj.h>
+#include <SDL_syswm.h>
+static int CALLBACK pick_start(HWND h, UINT msg, LPARAM lp, LPARAM data) {
+    (void)lp; if (msg == BFFM_INITIALIZED && data) SendMessageA(h, BFFM_SETSELECTIONA, TRUE, data);
+    return 0;
+}
+static int pick_folder(const char *start, char *out, size_t n) {
+    typedef LPITEMIDLIST (WINAPI *browse_fn)(LPBROWSEINFOA);
+    typedef BOOL (WINAPI *path_fn)(LPCITEMIDLIST, LPSTR);
+    typedef HRESULT (WINAPI *init_fn)(LPVOID);
+    typedef void (WINAPI *free_fn)(LPVOID);
+    HMODULE sh = LoadLibraryA("shell32.dll"), ole = LoadLibraryA("ole32.dll");   /* (no link changes) */
+    browse_fn browse = sh ? (browse_fn)(void *)GetProcAddress(sh, "SHBrowseForFolderA") : NULL;
+    path_fn to_path = sh ? (path_fn)(void *)GetProcAddress(sh, "SHGetPathFromIDListA") : NULL;
+    init_fn ole_init = ole ? (init_fn)(void *)GetProcAddress(ole, "OleInitialize") : NULL;
+    free_fn co_free = ole ? (free_fn)(void *)GetProcAddress(ole, "CoTaskMemFree") : NULL;
+    if (!browse || !to_path) return -1;
+    if (ole_init) ole_init(NULL);                     /* the newer dialog, with a New Folder button */
+    SDL_SysWMinfo wm; SDL_VERSION(&wm.version);
+    BROWSEINFOA bi; memset(&bi, 0, sizeof bi);
+    bi.hwndOwner = SDL_GetWindowWMInfo(win, &wm) ? wm.info.win.window : NULL;
+    bi.lpszTitle = "Choose the folder for your saved games";
+    bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
+    bi.lpfn = pick_start; bi.lParam = (LPARAM)start;
+    LPITEMIDLIST id = browse(&bi);
+    if (!id) return 0;
+    char p[MAX_PATH] = ""; int ok = to_path(id, p) && p[0];
+    if (co_free) co_free(id);
+    if (ok) snprintf(out, n, "%s", p);
+    return ok;
+}
+#else
+static void shell_quote(char *out, size_t n, const char *s) {   /* 'it'\''s' */
+    size_t k = 0; if (n < 3) { out[0] = 0; return; }
+    out[k++] = '\'';
+    for (; *s && k + 5 < n; s++) { if (*s == '\'') { memcpy(out + k, "'\\''", 4); k += 4; } else out[k++] = *s; }
+    out[k++] = '\''; out[k] = 0;
+}
+static int run_picker(const char *cmd, char *out, size_t n) {
+    FILE *p = popen(cmd, "r"); if (!p) return -1;
+    char buf[1200] = ""; if (!fgets(buf, sizeof buf, p)) buf[0] = 0;
+    pclose(p);
+    buf[strcspn(buf, "\r\n")] = 0;
+    size_t L = strlen(buf); while (L > 1 && buf[L - 1] == '/') buf[--L] = 0;
+    if (!buf[0]) return 0;
+    snprintf(out, n, "%s", buf); return 1;
+}
+static int pick_folder(const char *start, char *out, size_t n) {
+    char q[2400], cmd[3000];
+    shell_quote(q, sizeof q, start);
+#ifdef __APPLE__
+    if (!strchr(start, '"') && !strchr(start, '\'') && !strchr(start, '\\'))
+        snprintf(cmd, sizeof cmd, "osascript -e 'POSIX path of (choose folder with prompt \"Choose the folder for your saved games\" "
+                 "default location (POSIX file \"%s\"))' 2>/dev/null", start);
+    else snprintf(cmd, sizeof cmd, "osascript -e 'POSIX path of (choose folder with prompt \"Choose the folder for your saved games\")' 2>/dev/null");
+    return run_picker(cmd, out, n);
+#else
+    if (!system("command -v zenity >/dev/null 2>&1")) {           /* GNOME and most others */
+        snprintf(cmd, sizeof cmd, "zenity --file-selection --directory --title='Choose the folder for your saved games' --filename=%.2300s/ 2>/dev/null", q);
+        return run_picker(cmd, out, n);
+    }
+    if (!system("command -v kdialog >/dev/null 2>&1")) {          /* KDE: SteamOS's desktop */
+        snprintf(cmd, sizeof cmd, "kdialog --getexistingdirectory %.2300s --title 'Choose the folder for your saved games' 2>/dev/null", q);
+        return run_picker(cmd, out, n);
+    }
+    return -1;
+#endif
+}
+#endif
+extern const char *g_game_dir;
+/* use this save folder ("" = the default): offer to copy the saved games over if it has none */
+static void save_folder_set(const char *dir) {
+    char old[1100], def[1100], want[1100];
+    cm_saves_root(old, sizeof old);
+    snprintf(def, sizeof def, "%s/saves", g_game_dir);
+    snprintf(want, sizeof want, "%s", dir[0] ? dir : def);
+    if (!strcmp(want, old)) return;
+    if (!dir[0]) {
+#ifdef _WIN32
+        _mkdir(def);
+#else
+        mkdir(def, 0755);
+#endif
+    }
+    char t[1200]; snprintf(t, sizeof t, "%s/.cm9798-write-test", want);
+    FILE *f = fopen(t, "wb");
+    if (!f) {
+        char m[1400]; snprintf(m, sizeof m, "The game can't save in this folder:\n%s\n\nThe save folder is still:\n%s", want, old);
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_WARNING, "Save folder", m, win); return;
+    }
+    fclose(f); remove(t);
+    if (cm_saves_in(old) && !cm_saves_in(want)) {
+        char q[2600]; snprintf(q, sizeof q, "Copy your saved games to the new save folder?\n\nFrom: %s\nTo: %s\n\n"
+                               "The originals are kept where they are. Without them, the new folder starts empty.", old, want);
+        if (host_ask("Save folder", q)) cm_copy_saves(old, want);
+    }
+    cm_set_saves_root(dir[0] && strcmp(dir, def) ? dir : "");
+    fprintf(stderr, "saves: the save folder is now %s\n", want);
+    cfg_save();
+    host_notify("Save folder changed");
+}
+static void save_folder_change(void) {
+    char cur[1100], dir[1100] = ""; cm_saves_root(cur, sizeof cur);
+    int full = want_fullscreen && (SDL_GetWindowFlags(win) & SDL_WINDOW_FULLSCREEN_DESKTOP);
+    if (full) SDL_SetWindowFullscreen(win, 0);           /* (the picker opens behind a fullscreen window) */
+    int r = pick_folder(cur, dir, sizeof dir);
+    if (full) apply_fullscreen();
+    if (r < 0) {
+        char m[1600]; snprintf(m, sizeof m, "There is no folder picker on this system%s.\n\nTo use another save folder, set it in "
+                               "cm9798.cfg in the game folder:\n\n    saves = /path/to/folder\n\nThe save folder is now:\n%s",
+#if defined(__linux__)
+                               " (it uses zenity or kdialog)",
+#else
+                               "",
+#endif
+                               cur);
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "Save folder", m, win); return;
+    }
+    if (r > 0) save_folder_set(dir);
+}
 static void menu_choose(int r, int i) {
     if (menu_disabled(r, i)) return;
     switch (r) {
@@ -540,6 +674,7 @@ static void menu_choose(int r, int i) {
     case M_COLOURS: g_stat_colours = i == 0; break;
     case M_AUTOSAVE: g_autosave = i == 0; break;
     case M_BACKUPS: g_backup_keep = backup_counts[i]; break;
+    case M_SAVEDIR: if (i == 0) save_folder_change(); else save_folder_set(""); return;   /* (saves cm9798.cfg itself) */
     case M_DONE: g_menu_open = 0; return;
     }
     cfg_save();
@@ -636,6 +771,13 @@ static void menu_draw(float k, int ox, int oy, int pw, int ph) {
             mbevel(b, off ? 64 : on ? 170 : hover ? 120 : 96);
             mtext(menu_opts[r][i], b.x, b.y, b.w, b.h, 10, off ? greyed : on ? dark : dim, on, 1, 0);
         }
+    }
+    if (menu_tab == row_tab(M_SAVEDIR)) {               /* where the saves are, under its row */
+        char cur[1100], shown[96]; cm_saves_root(cur, sizeof cur);
+        size_t L = strlen(cur);
+        if (L > 66) snprintf(shown, sizeof shown, "...%s", cur + L - 63); else snprintf(shown, sizeof shown, "%s", cur);
+        mtext(shown, MENU_X0 + 26, menu_row_y(M_SAVEDIR) + 21, MENU_X1 - MENU_X0 - 42, 14, 9,
+              cm_saves_root_custom()[0] ? white : dim, 0, 0, 0);
     }
     SDL_Rect done = menu_button(M_DONE, 0);
     int hover = menu_mx >= done.x && menu_mx < done.x + done.w && menu_my >= done.y && menu_my < done.y + done.h;

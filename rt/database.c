@@ -223,9 +223,52 @@ static const char *save_db(int write) {
     int use = (write || !in_frontend) && career >= 0 ? career : sel;
     return use >= 0 ? dbs[use].dir : "9798";
 }
+/* The save folder (F1, Gameplay, Save folder; cm9798.cfg "saves = <folder>"): <game>/saves unless the
+   player chose another. It holds a folder per database, as saves/ does. */
+static char saves_root[1024];                          /* "": the default, <game>/saves */
+void cm_set_saves_root(const char *p) {
+    snprintf(saves_root, sizeof saves_root, "%s", p ? p : "");
+    size_t L = strlen(saves_root);
+    while (L > 1 && (saves_root[L - 1] == '/' || saves_root[L - 1] == '\\') && !(L == 3 && saves_root[1] == ':')) saves_root[--L] = 0;
+}
+const char *cm_saves_root_custom(void) { return saves_root; }
+void cm_saves_root(char *out, size_t n) {
+    if (saves_root[0]) snprintf(out, n, "%s", saves_root); else snprintf(out, n, "%s/saves", cm_game_dir());
+}
+/* any saved games in this save folder (a database folder with its slot list)? */
+int cm_saves_in(const char *root) {
+    DIR *d = opendir(root); struct dirent *e; int k = 0; char sub[1400], f[1500];
+    if (!d) return 0;
+    while (!k && (e = readdir(d))) {
+        if (e->d_name[0] == '.') continue;
+        snprintf(sub, sizeof sub, "%s/%s", root, e->d_name);
+        if (is_dir(sub) && find_in(sub, "GAMESS16.IDX", f, sizeof f)) k = 1;
+    }
+    closedir(d); return k;
+}
+/* everything in one save folder copied into another (files already there are kept) */
+static int copy_tree(const char *from, const char *to) {
+    DIR *d = opendir(from); struct dirent *e; int k = 0;
+    if (!d) return 0;
+    if (!is_dir(to)) MKDIR(to);
+    while ((e = readdir(d))) {
+        if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) continue;
+        char a[1400], c[1400]; struct stat st;
+        snprintf(a, sizeof a, "%s/%s", from, e->d_name); snprintf(c, sizeof c, "%s/%s", to, e->d_name);
+        if (is_dir(a)) k += copy_tree(a, c);
+        else if (stat(c, &st)) { if (cm_copy_file(a, c)) k++; else fprintf(stderr, "saves: could not copy %s\n", a); }
+    }
+    closedir(d); return k;
+}
+int cm_copy_saves(const char *from, const char *to) {
+    int k = copy_tree(from, to);
+    fprintf(stderr, "saves: copied %d files from %s to %s (the originals are kept)\n", k, from, to);
+    return k;
+}
+
 /* folders are made when written to (write = 1), not when only looked at */
 int cm_saves_dir(int write, char *out, size_t n) {
-    char root[1100]; snprintf(root, sizeof root, "%s/saves", cm_game_dir());
+    char root[1100]; cm_saves_root(root, sizeof root);
     snprintf(out, n, "%s/%s", root, save_db(write));
     if (write) { mkdirs(root); mkdirs(out); }
     return is_dir(out);
@@ -271,6 +314,7 @@ static int copy_files(const char *from, const char *to, int slot_only) {
 /* first run: the game folder's saves (and the port's autosaves/backups) -> saves/9798 */
 static void migrate_saves(void) {
     char root[1100], dst[1200], a[1400], c[1500];
+    if (saves_root[0]) return;                         /* a save folder of the player's own: nothing to bring */
     snprintf(root, sizeof root, "%s/saves", cm_game_dir());
     if (is_dir(root)) return;
     if (!mkdirs(root)) return;

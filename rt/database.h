@@ -21,6 +21,12 @@ int         db_redirect(const char *dos_path, char *host, size_t n);   /* dos.c:
 /* saved games: saves/<database>/GAMESS16.IDX and saves/<database>/save<N>/ (made if missing).
    write = 1: where the game being played saves; 0: where the front end reads (the chosen database) */
 int cm_saves_dir(int write, char *out, size_t n);
+/* the save folder those are in: <game>/saves, or the player's own (F1; cm9798.cfg "saves = <folder>") */
+void        cm_set_saves_root(const char *p);     /* "" or NULL: the default */
+const char *cm_saves_root_custom(void);           /* the player's own folder ("": the default) */
+void        cm_saves_root(char *out, size_t n);   /* the folder in use */
+int         cm_saves_in(const char *root);        /* any saved games there? */
+int         cm_copy_saves(const char *from, const char *to);   /* files copied (those there already kept) */
 int cm_slot_dir(int slot, int write, char *out, size_t n);
 int save_redirect(const char *dos_path, char *host, size_t n, int write);   /* dos.c */
 int db_league_allowed(const char *label);   /* "English League": allowed by database.cfg leagues = ...? */
