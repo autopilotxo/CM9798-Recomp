@@ -661,7 +661,7 @@ static void players_draw(float k, int ox, int oy) {
     SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
     const SDL_Color white = { 230, 230, 230, 255 }, yellow = { 255, 255, 40, 255 }, dim = { 170, 170, 170, 255 };
     static const char *const names[3] = { "Small", "Medium", "Full" };
-    static const char *const counts[3] = { "up to 9,900 players, as the original", "up to 14,000 players", "up to 20,000 players - the whole database" };
+    static const char *const counts[3] = { "up to 9,900 players, as the original DOS game", "up to 14,000 players", "up to 20,000 players - the whole database" };
     int cur = g_player_size >= 0 && g_player_size <= 2 ? g_player_size : 2;
     char cap[96]; snprintf(cap, sizeof cap, "Players: %s, %s", names[cur], counts[cur]);
     mfill(158, 384, 324, 59, 0, 0, 0, 150);                                        /* a dark panel, for reading */
