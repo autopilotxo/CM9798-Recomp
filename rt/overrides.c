@@ -544,18 +544,21 @@ void hook_transfers_choice(void) {                         /* after the choice i
 /* ---- How many players a new game keeps ----
    The original kept no more than 9900 of the database's players (2475 a league, at least 5000): reached
    with four leagues, so with more the smallest clubs were left short. The table has room for 24000
-   (relocations.txt). CM_PLAYERS: small (the original's 9900), medium (14000) or full (20000: the whole
-   97/98 database, leaving room for the young players made each season), or a number. Default: full. */
+   (relocations.txt). g_player_size: 0 small (the original's 9900), 1 medium (14000), 2 full (20000: the
+   whole 97/98 database, leaving room for the young players made each season) - the slider on "Choose
+   Leagues to Run" (sdl.c), saved in cm9798.cfg. CM_PLAYERS (small, medium, full or a number) overrides it. */
+int g_player_size = 2;
+const uint32_t g_player_sizes[3] = { 9900, 14000, 20000 };
 uint32_t player_limit(void) {
     const char *s = getenv("CM_PLAYERS");
     if (s && *s) {
-        if (!strcmp(s, "small")) return 9900;
-        if (!strcmp(s, "medium")) return 14000;
-        if (!strcmp(s, "full")) return 20000;
+        if (!strcmp(s, "small")) return g_player_sizes[0];
+        if (!strcmp(s, "medium")) return g_player_sizes[1];
+        if (!strcmp(s, "full")) return g_player_sizes[2];
         long n = strtol(s, NULL, 10);
         if (n >= 5000 && n <= 20000) return (uint32_t)n;
     }
-    return 20000;
+    return g_player_sizes[g_player_size >= 0 && g_player_size <= 2 ? g_player_size : 2];
 }
 
 /* ---- Select Team with more than ten pages ----

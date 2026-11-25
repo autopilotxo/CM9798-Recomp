@@ -57,6 +57,8 @@ static const char *scale_names[SCALE_MODES] = { "integer", "nearest", "smooth" }
 static int scale_mode = SCALE_INTEGER, want_fullscreen = 0, match_speed = 1, text_sharp = 1;
 static char cfg_path[1024];
 extern int g_show_stars, g_stat_colours, g_star_mode;
+extern int g_player_size;                     /* overrides.c: players a new game keeps (0-2) */
+static const char *const player_size_names[3] = { "small", "medium", "full" };
 
 static void cfg_load(void) {
     extern const char *g_game_dir;                /* settings live in the game folder, next to CM2E16.EXE */
@@ -79,6 +81,7 @@ static void cfg_load(void) {
         if (sscanf(line, " sound_volume = %63s", v) == 1) { g_sound_volume = atoi(v); if (g_sound_volume < 0) g_sound_volume = 0; if (g_sound_volume > 100) g_sound_volume = 100; }
         if (sscanf(line, " sound = %63s", v) == 1) g_sound = strcmp(v, "off") != 0 && strcmp(v, "0") != 0;
         if (sscanf(line, " backgrounds = %63s", v) == 1) g_cm2_backgrounds = !SDL_strcasecmp(v, "cm2");
+        if (sscanf(line, " players = %63s", v) == 1) for (int i = 0; i < 3; i++) if (!SDL_strcasecmp(v, player_size_names[i])) g_player_size = i;
     }
     fclose(f);
 }
@@ -99,6 +102,9 @@ static void cfg_save(void) {
                "# new one each day, and the clubs' own pictures; from a CM2 database's pictures folder)\n"
                "backgrounds = %s\n", g_cm2_backgrounds ? "cm2" : "9798");
     fprintf(f, "# match sounds: CM2's crowd, cheers and whistles (its SOUNDS folder, copied by the setup) (on | off), and their volume (0-100)\nsound = %s\nsound_volume = %d\n", g_sound ? "on" : "off", g_sound_volume);
+    fprintf(f, "# players a new game keeps (the slider on Choose Leagues to Run): small (9900, as the original) |\n"
+               "# medium (14000) | full (20000: the whole 97/98 database) - with five or more leagues\nplayers = %s\n",
+            player_size_names[g_player_size >= 0 && g_player_size <= 2 ? g_player_size : 2]);
     fclose(f);
 }
 void host_set_database(int start_year) { (void)start_year; cfg_save(); }
@@ -637,6 +643,40 @@ static void menu_draw(float k, int ox, int oy, int pw, int ph) {
     mtext("Done", done.x, done.y, done.w, done.h, 13, white, 0, 1, 1);
 }
 
+/* ---- "Choose Leagues to Run": the Players slider above Done ----
+   Small | Medium | Full: how many of the database's players a new game keeps (overrides.c,
+   player_limit). In the game's 640x480 units; clicks on it are the port's, not the game's. */
+#define PS_X0 200
+#define PS_X1 440
+#define PS_Y  407                                  /* the track's row (knob 18 high) */
+static int players_ui, players_drag;
+static int ps_stop_x(int i) { return PS_X0 + (PS_X1 - PS_X0) * i / 2; }
+static int players_hit(int x, int y) { return players_ui && x >= 158 && x < 482 && y >= 384 && y < 443; }
+static void players_set(int x) {
+    int best = 0; for (int i = 1; i < 3; i++) if (abs(x - ps_stop_x(i)) < abs(x - ps_stop_x(best))) best = i;
+    if (best != g_player_size) { g_player_size = best; present(); }
+}
+static void players_draw(float k, int ox, int oy) {
+    mk = k; mox = ox; moy = oy;
+    SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+    const SDL_Color white = { 230, 230, 230, 255 }, yellow = { 255, 255, 40, 255 }, dim = { 170, 170, 170, 255 };
+    static const char *const names[3] = { "Small", "Medium", "Full" };
+    static const char *const counts[3] = { "up to 9,900 players, as the original", "up to 14,000 players", "up to 20,000 players - the whole database" };
+    int cur = g_player_size >= 0 && g_player_size <= 2 ? g_player_size : 2;
+    char cap[96]; snprintf(cap, sizeof cap, "Players: %s, %s", names[cur], counts[cur]);
+    mfill(158, 384, 324, 59, 0, 0, 0, 150);                                        /* a dark panel, for reading */
+    mtext(cap, 0, 387, 640, 16, 11, white, 0, 1, 1);
+    mfill(PS_X0, PS_Y + 6, PS_X1 - PS_X0, 6, 0, 0, 0, 255);                       /* the track */
+    mfill(PS_X0 + 1, PS_Y + 7, PS_X1 - PS_X0 - 2, 4, 40, 40, 40, 255);
+    if (cur) mfill(PS_X0 + 1, PS_Y + 7, ps_stop_x(cur) - PS_X0 - 1, 4, 200, 200, 40, 255);
+    for (int i = 0; i < 3; i++) {                                                    /* the stops and their names */
+        mfill(ps_stop_x(i) - 1, PS_Y + 3, 3, 12, 0, 0, 0, 255);
+        mtext(names[i], ps_stop_x(i) - 40, PS_Y + 19, 80, 14, 10, i == cur ? yellow : dim, i == cur, 1, 1);
+    }
+    SDL_Rect kn = { ps_stop_x(cur) - 6, PS_Y, 12, 18 };
+    mbevel(kn, players_drag ? 200 : 170);
+}
+
 /* ---- Restore Backup panel: each saved game's backups (backup.c), newest first; Restore copies the
    chosen one over the saved game, after backing up what's there now. Opened by the Options screen's
    "Restore Backup" box (overrides.c); the game waits while it is open. Layout in the game's 640x480 units, like the F1 menu. ---- */
@@ -1086,12 +1126,13 @@ static void present(void) {
     star_check(p, w, h, st);
     text_dim_clear();
     grey_leagues(rgb, p, w, h, st, sharp);
+    { int x0, y0, x1, y1; players_ui = w == 640 && h == 480 && text_find(p, st, "Choose Leagues to Run", &x0, &y0, &x1, &y1); }
     stat_colours(rgb, p, w, h, st, sharp);
     SDL_UpdateTexture(tex, NULL, rgb, w * 4);
     SDL_SetRenderDrawColor(ren, 0, 0, 0, 255); SDL_RenderClear(ren);
     SDL_RenderCopy(ren, tex, NULL, NULL);
     int toast = toast_alpha();
-    if (sharp || toast || g_menu_open || bk_open || dbp_open || star_n) {
+    if (sharp || toast || g_menu_open || bk_open || dbp_open || star_n || players_ui) {
         /* draw in real output pixels: where the scaled picture lies, as SDL placed it */
         int ow, oh; SDL_GetRendererOutputSize(ren, &ow, &oh);
         float k = (float)ow / w < (float)oh / h ? (float)ow / w : (float)oh / h;
@@ -1109,6 +1150,7 @@ static void present(void) {
             }
         }
         star_draw(k, ox, oy);
+        if (players_ui) players_draw(k, ox, oy);
         if (g_menu_open) menu_draw(k, ox, oy, (int)(w * k), (int)(h * k));
         if (bk_open) bk_draw(k, ox, oy, (int)(w * k), (int)(h * k));
         if (dbp_open) dbp_draw(k, ox, oy, (int)(w * k), (int)(h * k));
@@ -1255,8 +1297,15 @@ static void pump(void) {
             fprintf(stderr, "window closed - exiting (progress since your last save is lost, as in DOS)\n");
             if (rec) fclose(rec);
             SDL_Quit(); exit(0);
-        case SDL_MOUSEMOTION: push_ev(EV_MOVE, e.motion.x, e.motion.y); break;
+        case SDL_MOUSEMOTION:
+            if (players_drag) players_set(e.motion.x);
+            push_ev(EV_MOVE, e.motion.x, e.motion.y); break;
         case SDL_MOUSEBUTTONDOWN: case SDL_MOUSEBUTTONUP: {
+            /* the Players slider on Choose Leagues to Run is the port's */
+            if (e.button.button == SDL_BUTTON_LEFT) {
+                if (e.type == SDL_MOUSEBUTTONUP && players_drag) { players_drag = 0; cfg_save(); present(); break; }
+                if (e.type == SDL_MOUSEBUTTONDOWN && players_hit(e.button.x, e.button.y)) { players_drag = 1; players_set(e.button.x); present(); break; }
+            }
             /* clicks on the match speed buttons are the port's, not the game's */
             if (e.button.button == SDL_BUTTON_LEFT) {
                 if (e.type == SDL_MOUSEBUTTONUP && speed_swallow_up) { speed_swallow_up = 0; break; }
