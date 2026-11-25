@@ -228,3 +228,7 @@
 # width for every page (rt/overrides.c).
 075b2f replace hook_select_team_layout_args();
 075b35 replace hook_select_team_layout_pop();
+
+# How many of the database's players a new game keeps: the original's 9900 (reached with four leagues)
+# is now a setting - small 9900, medium 14000, full 20000 (rt/overrides.c, player_limit).
+039fc6 replace eax = player_limit();

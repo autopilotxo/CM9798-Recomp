@@ -27,6 +27,7 @@ uint32_t calendar_old_buffer(void);  /* patches.txt, rt/ */
 uint32_t calendar_pack(void);  /* patches.txt, rt/ */
 uint32_t competition_menu_tail(void);  /* patches.txt, rt/ */
 uint32_t transfers_menu_tail(void);  /* patches.txt, rt/ */
+uint32_t player_limit(void);  /* patches.txt, rt/ */
 uint32_t first_season_year(void);  /* patches.txt, rt/ */
 uint32_t fixtures_old_buffer(void);  /* patches.txt, rt/ */
 uint32_t fixtures_pack(void);  /* patches.txt, rt/ */

@@ -21,7 +21,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define PLAYERS 0x05000000u          /* the player table (0x11f3de0 in the game; relocations.txt moves it) */
+#define PLAYERS 0x06000000u          /* the player table (0x11f3de0 in the game; relocations.txt moves it) */
 #define PLAYER_SIZE 0x168u
 /* stats, in the order they're stored from +0xEA */
 enum { AGG, BIG, CHA, HID, CON, CRE, DET, DIR, DRI, FLA, HEA, INF, INJ, ADA, OTB, PAC, PAS, POS, SET, SHO, STA, STR, TAC, TEC };

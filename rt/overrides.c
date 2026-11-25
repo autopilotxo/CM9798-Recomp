@@ -541,6 +541,23 @@ void hook_transfers_choice(void) {                         /* after the choice i
     }
 }
 
+/* ---- How many players a new game keeps ----
+   The original kept no more than 9900 of the database's players (2475 a league, at least 5000): reached
+   with four leagues, so with more the smallest clubs were left short. The table has room for 24000
+   (relocations.txt). CM_PLAYERS: small (the original's 9900), medium (14000) or full (20000: the whole
+   97/98 database, leaving room for the young players made each season), or a number. Default: full. */
+uint32_t player_limit(void) {
+    const char *s = getenv("CM_PLAYERS");
+    if (s && *s) {
+        if (!strcmp(s, "small")) return 9900;
+        if (!strcmp(s, "medium")) return 14000;
+        if (!strcmp(s, "full")) return 20000;
+        long n = strtol(s, NULL, 10);
+        if (n >= 5000 && n <= 20000) return (uint32_t)n;
+    }
+    return 20000;
+}
+
 /* ---- Select Team with more than ten pages ----
    0x1075b2f pushes the number of buttons on the bottom bar (Done and one per page) on top of eleven
    widths already pushed (Done's 3, ten pages' 1). With more than ten pages the layout routine read
