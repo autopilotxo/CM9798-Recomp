@@ -57,13 +57,20 @@ static const char *scale_names[SCALE_MODES] = { "integer", "nearest", "smooth" }
 static int scale_mode = SCALE_INTEGER, want_fullscreen = 0, match_speed = 1, text_sharp = 1;
 static char cfg_path[1024];
 extern int g_show_stars, g_stat_colours, g_star_mode;
+extern int g_player_size;                     /* overrides.c: players a new game keeps (0-2) */
+static const char *const player_size_names[3] = { "small", "medium", "full" };
 
 static void cfg_load(void) {
     extern const char *g_game_dir;                /* settings live in the game folder, next to CM2E16.EXE */
     snprintf(cfg_path, sizeof cfg_path, "%s/cm9798.cfg", g_game_dir);
     FILE *f = fopen(cfg_path, "r"); if (!f) return;
-    char line[128], v[64];
+    char line[1200], v[64], path[1100];
     while (fgets(line, sizeof line, f)) {
+        if (sscanf(line, " saves = %1099[^\r\n]", path) == 1) {     /* the save folder (may have spaces) */
+            size_t L = strlen(path); while (L && (path[L - 1] == ' ' || path[L - 1] == '\t')) path[--L] = 0;
+            cm_set_saves_root(SDL_strcasecmp(path, "default") ? path : "");
+            continue;
+        }
         if (sscanf(line, " scale = %63s", v) == 1)
             for (int i = 0; i < SCALE_MODES; i++) if (!strcmp(v, scale_names[i])) scale_mode = i;
         if (sscanf(line, " fullscreen = %63s", v) == 1) want_fullscreen = atoi(v) != 0;
@@ -79,6 +86,7 @@ static void cfg_load(void) {
         if (sscanf(line, " sound_volume = %63s", v) == 1) { g_sound_volume = atoi(v); if (g_sound_volume < 0) g_sound_volume = 0; if (g_sound_volume > 100) g_sound_volume = 100; }
         if (sscanf(line, " sound = %63s", v) == 1) g_sound = strcmp(v, "off") != 0 && strcmp(v, "0") != 0;
         if (sscanf(line, " backgrounds = %63s", v) == 1) g_cm2_backgrounds = !SDL_strcasecmp(v, "cm2");
+        if (sscanf(line, " players = %63s", v) == 1) for (int i = 0; i < 3; i++) if (!SDL_strcasecmp(v, player_size_names[i])) g_player_size = i;
     }
     fclose(f);
 }
@@ -99,6 +107,12 @@ static void cfg_save(void) {
                "# new one each day, and the clubs' own pictures; from a CM2 database's pictures folder)\n"
                "backgrounds = %s\n", g_cm2_backgrounds ? "cm2" : "9798");
     fprintf(f, "# match sounds: CM2's crowd, cheers and whistles (its SOUNDS folder, copied by the setup) (on | off), and their volume (0-100)\nsound = %s\nsound_volume = %d\n", g_sound ? "on" : "off", g_sound_volume);
+    fprintf(f, "# players a new game keeps (the slider on Choose Leagues to Run): small (9900, as the original) |\n"
+               "# medium (14000) | full (20000: the whole 97/98 database) - with five or more leagues\nplayers = %s\n",
+            player_size_names[g_player_size >= 0 && g_player_size <= 2 ? g_player_size : 2]);
+    fprintf(f, "# save folder: default (the game folder's saves folder) | a folder of your own, which gets a folder\n"
+               "# per database as saves does (F1, Gameplay, Save folder)\nsaves = %s\n",
+            cm_saves_root_custom()[0] ? cm_saves_root_custom() : "default");
     fclose(f);
 }
 void host_set_database(int start_year) { (void)start_year; cfg_save(); }
@@ -210,12 +224,13 @@ static void apply_pending(void) {
 int g_menu_open;                   /* options menu is open (the game is paused) */
 static int bk_open;                /* Restore Backup panel is open (the game is paused too) */
 static int dbp_open;               /* Choose Database panel is open (likewise) */
+static int rp_open;                /* a report (the Database Editor's Test Database) is open (likewise) */
 static int watchdog(void *arg) {
     (void)arg; uint32_t last = g_int_count; int quiet = 0, reports = 0;
     for (;;) {
         SDL_Delay(1000);
         uint32_t now = g_int_count;
-        if (now != last || g_menu_open || bk_open || dbp_open) { last = now; quiet = 0; continue; }
+        if (now != last || g_menu_open || bk_open || dbp_open || rp_open) { last = now; quiet = 0; continue; }
         if (++quiet == 3 && reports < 5) {
             reports++;
             fprintf(stderr, "\n[watchdog] no DOS/BIOS calls for 3 s - the game seems stuck (poll %lu, trace position %u)\n", g_polls, g_trace_pos);
@@ -469,13 +484,13 @@ static int speed_hit(int x, int y) {
 static int menu_mx = -1, menu_my = -1;
 extern int g_autosave, g_backup_keep;
 /* two tabs: Graphics (rows 0-3) and Gameplay (rows 4-9) */
-enum { M_WINDOW, M_SCALING, M_TEXT, M_BACKGROUNDS, M_SOUND, M_VOLUME, M_STARS, M_COLOURS, M_AUTOSAVE, M_BACKUPS, M_DONE, M_TAB, M_ROWS };
+enum { M_WINDOW, M_SCALING, M_TEXT, M_BACKGROUNDS, M_SOUND, M_VOLUME, M_STARS, M_COLOURS, M_AUTOSAVE, M_BACKUPS, M_SAVEDIR, M_DONE, M_TAB, M_ROWS };
 static const char *const menu_opts[M_ROWS][4] = {
     { "Window", "Fullscreen" }, { "Integer", "Nearest", "Smooth" }, { "Sharp", "Original" }, { "CM 97/98", "CM 2" }, { "On", "Off" }, { "slider" },
-    { "Your club", "Overall", "Off" }, { "On", "Off" }, { "On", "Off" }, { "Off", "3", "5", "10" }, { 0 }, { 0 } };
+    { "Your club", "Overall", "Off" }, { "On", "Off" }, { "On", "Off" }, { "Off", "3", "5", "10" }, { "Change...", "Default" }, { 0 }, { 0 } };
 static const int backup_counts[4] = { 0, 3, 5, 10 };
 static const char *const menu_names[M_ROWS] = { "Window", "Scaling", "Text", "Backgrounds", "Match sounds", "Volume", "Star ratings", "Coloured stats",
-                                                "Autosave", "Backups per slot", "", "" };
+                                                "Autosave", "Backups per slot", "Save folder", "", "" };
 static const char *const menu_tabs[2] = { "Graphics", "Gameplay" };
 static int menu_tab;                               /* 0 = Graphics, 1 = Gameplay */
 int g_show_stars = 1, g_stat_colours = 1;          /* player screen: star rating, coloured stats */
@@ -502,6 +517,7 @@ static int menu_current(int r) {
     case M_COLOURS: return g_stat_colours ? 0 : 1;
     case M_AUTOSAVE: return g_autosave ? 0 : 1;
     case M_BACKUPS: for (int i = 0; i < 4; i++) if (backup_counts[i] == g_backup_keep) return i; return -1;
+    case M_SAVEDIR: return cm_saves_root_custom()[0] ? -1 : 1;   /* "Default" lit while it is */
     }
     return -1;
 }
@@ -519,6 +535,131 @@ static SDL_Rect menu_button(int r, int i) {
     int n = menu_nopts(r), x0 = MENU_X0 + 170, x1 = MENU_X1 - 16, gap = 4, bw = (x1 - x0 - gap * (n - 1)) / n;
     SDL_Rect b = { x0 + i * (bw + gap), menu_row_y(r), bw, 18 }; return b;
 }
+/* ---- Save folder: the system's own folder picker ----
+   1: a folder chosen (out), 0: cancelled, -1: no picker on this system */
+int host_ask(const char *title, const char *text);
+#ifdef _WIN32
+#include <windows.h>
+#include <shlobj.h>
+#include <SDL_syswm.h>
+static int CALLBACK pick_start(HWND h, UINT msg, LPARAM lp, LPARAM data) {
+    (void)lp; if (msg == BFFM_INITIALIZED && data) SendMessageA(h, BFFM_SETSELECTIONA, TRUE, data);
+    return 0;
+}
+static int pick_folder(const char *start, char *out, size_t n) {
+    typedef LPITEMIDLIST (WINAPI *browse_fn)(LPBROWSEINFOA);
+    typedef BOOL (WINAPI *path_fn)(LPCITEMIDLIST, LPSTR);
+    typedef HRESULT (WINAPI *init_fn)(LPVOID);
+    typedef void (WINAPI *free_fn)(LPVOID);
+    HMODULE sh = LoadLibraryA("shell32.dll"), ole = LoadLibraryA("ole32.dll");   /* (no link changes) */
+    browse_fn browse = sh ? (browse_fn)(void *)GetProcAddress(sh, "SHBrowseForFolderA") : NULL;
+    path_fn to_path = sh ? (path_fn)(void *)GetProcAddress(sh, "SHGetPathFromIDListA") : NULL;
+    init_fn ole_init = ole ? (init_fn)(void *)GetProcAddress(ole, "OleInitialize") : NULL;
+    free_fn co_free = ole ? (free_fn)(void *)GetProcAddress(ole, "CoTaskMemFree") : NULL;
+    if (!browse || !to_path) return -1;
+    if (ole_init) ole_init(NULL);                     /* the newer dialog, with a New Folder button */
+    SDL_SysWMinfo wm; SDL_VERSION(&wm.version);
+    BROWSEINFOA bi; memset(&bi, 0, sizeof bi);
+    bi.hwndOwner = SDL_GetWindowWMInfo(win, &wm) ? wm.info.win.window : NULL;
+    bi.lpszTitle = "Choose the folder for your saved games";
+    bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
+    bi.lpfn = pick_start; bi.lParam = (LPARAM)start;
+    LPITEMIDLIST id = browse(&bi);
+    if (!id) return 0;
+    char p[MAX_PATH] = ""; int ok = to_path(id, p) && p[0];
+    if (co_free) co_free(id);
+    if (ok) snprintf(out, n, "%s", p);
+    return ok;
+}
+#else
+static void shell_quote(char *out, size_t n, const char *s) {   /* 'it'\''s' */
+    size_t k = 0; if (n < 3) { out[0] = 0; return; }
+    out[k++] = '\'';
+    for (; *s && k + 5 < n; s++) { if (*s == '\'') { memcpy(out + k, "'\\''", 4); k += 4; } else out[k++] = *s; }
+    out[k++] = '\''; out[k] = 0;
+}
+static int run_picker(const char *cmd, char *out, size_t n) {
+    FILE *p = popen(cmd, "r"); if (!p) return -1;
+    char buf[1200] = ""; if (!fgets(buf, sizeof buf, p)) buf[0] = 0;
+    pclose(p);
+    buf[strcspn(buf, "\r\n")] = 0;
+    size_t L = strlen(buf); while (L > 1 && buf[L - 1] == '/') buf[--L] = 0;
+    if (!buf[0]) return 0;
+    snprintf(out, n, "%s", buf); return 1;
+}
+static int pick_folder(const char *start, char *out, size_t n) {
+    char q[2400], cmd[3000];
+    shell_quote(q, sizeof q, start);
+#ifdef __APPLE__
+    if (!strchr(start, '"') && !strchr(start, '\'') && !strchr(start, '\\'))
+        snprintf(cmd, sizeof cmd, "osascript -e 'POSIX path of (choose folder with prompt \"Choose the folder for your saved games\" "
+                 "default location (POSIX file \"%s\"))' 2>/dev/null", start);
+    else snprintf(cmd, sizeof cmd, "osascript -e 'POSIX path of (choose folder with prompt \"Choose the folder for your saved games\")' 2>/dev/null");
+    return run_picker(cmd, out, n);
+#else
+    if (!system("command -v zenity >/dev/null 2>&1")) {           /* GNOME and most others */
+        snprintf(cmd, sizeof cmd, "zenity --file-selection --directory --title='Choose the folder for your saved games' --filename=%.2300s/ 2>/dev/null", q);
+        return run_picker(cmd, out, n);
+    }
+    if (!system("command -v kdialog >/dev/null 2>&1")) {          /* KDE: SteamOS's desktop */
+        snprintf(cmd, sizeof cmd, "kdialog --getexistingdirectory %.2300s --title 'Choose the folder for your saved games' 2>/dev/null", q);
+        return run_picker(cmd, out, n);
+    }
+    return -1;
+#endif
+}
+#endif
+extern const char *g_game_dir;
+/* use this save folder ("" = the default): offer to copy the saved games over if it has none */
+static void save_folder_set(const char *dir) {
+    char old[1100], def[1100], want[1100];
+    cm_saves_root(old, sizeof old);
+    snprintf(def, sizeof def, "%s/saves", g_game_dir);
+    snprintf(want, sizeof want, "%s", dir[0] ? dir : def);
+    if (!strcmp(want, old)) return;
+    if (!dir[0]) {
+#ifdef _WIN32
+        _mkdir(def);
+#else
+        mkdir(def, 0755);
+#endif
+    }
+    char t[1200]; snprintf(t, sizeof t, "%s/.cm9798-write-test", want);
+    FILE *f = fopen(t, "wb");
+    if (!f) {
+        char m[1400]; snprintf(m, sizeof m, "The game can't save in this folder:\n%s\n\nThe save folder is still:\n%s", want, old);
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_WARNING, "Save folder", m, win); return;
+    }
+    fclose(f); remove(t);
+    if (cm_saves_in(old) && !cm_saves_in(want)) {
+        char q[2600]; snprintf(q, sizeof q, "Copy your saved games to the new save folder?\n\nFrom: %s\nTo: %s\n\n"
+                               "The originals are kept where they are. Without them, the new folder starts empty.", old, want);
+        if (host_ask("Save folder", q)) cm_copy_saves(old, want);
+    }
+    cm_set_saves_root(dir[0] && strcmp(dir, def) ? dir : "");
+    fprintf(stderr, "saves: the save folder is now %s\n", want);
+    cfg_save();
+    host_notify("Save folder changed");
+}
+static void save_folder_change(void) {
+    char cur[1100], dir[1100] = ""; cm_saves_root(cur, sizeof cur);
+    int full = want_fullscreen && (SDL_GetWindowFlags(win) & SDL_WINDOW_FULLSCREEN_DESKTOP);
+    if (full) SDL_SetWindowFullscreen(win, 0);           /* (the picker opens behind a fullscreen window) */
+    int r = pick_folder(cur, dir, sizeof dir);
+    if (full) apply_fullscreen();
+    if (r < 0) {
+        char m[1600]; snprintf(m, sizeof m, "There is no folder picker on this system%s.\n\nTo use another save folder, set it in "
+                               "cm9798.cfg in the game folder:\n\n    saves = /path/to/folder\n\nThe save folder is now:\n%s",
+#if defined(__linux__)
+                               " (it uses zenity or kdialog)",
+#else
+                               "",
+#endif
+                               cur);
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "Save folder", m, win); return;
+    }
+    if (r > 0) save_folder_set(dir);
+}
 static void menu_choose(int r, int i) {
     if (menu_disabled(r, i)) return;
     switch (r) {
@@ -533,6 +674,7 @@ static void menu_choose(int r, int i) {
     case M_COLOURS: g_stat_colours = i == 0; break;
     case M_AUTOSAVE: g_autosave = i == 0; break;
     case M_BACKUPS: g_backup_keep = backup_counts[i]; break;
+    case M_SAVEDIR: if (i == 0) save_folder_change(); else save_folder_set(""); return;   /* (saves cm9798.cfg itself) */
     case M_DONE: g_menu_open = 0; return;
     }
     cfg_save();
@@ -630,10 +772,69 @@ static void menu_draw(float k, int ox, int oy, int pw, int ph) {
             mtext(menu_opts[r][i], b.x, b.y, b.w, b.h, 10, off ? greyed : on ? dark : dim, on, 1, 0);
         }
     }
+    if (menu_tab == row_tab(M_SAVEDIR)) {               /* where the saves are, under its row */
+        char cur[1100], shown[96]; cm_saves_root(cur, sizeof cur);
+        size_t L = strlen(cur);
+        if (L > 66) snprintf(shown, sizeof shown, "...%s", cur + L - 63); else snprintf(shown, sizeof shown, "%s", cur);
+        mtext(shown, MENU_X0 + 26, menu_row_y(M_SAVEDIR) + 21, MENU_X1 - MENU_X0 - 42, 14, 9,
+              cm_saves_root_custom()[0] ? white : dim, 0, 0, 0);
+    }
     SDL_Rect done = menu_button(M_DONE, 0);
     int hover = menu_mx >= done.x && menu_mx < done.x + done.w && menu_my >= done.y && menu_my < done.y + done.h;
     mbevel(done, hover ? 120 : 100);
     mtext("Done", done.x, done.y, done.w, done.h, 13, white, 0, 1, 1);
+}
+
+/* ---- "Choose Leagues to Run": the Players slider above Done ----
+   How many of the database's players a new game keeps (overrides.c, player_limit): Small | Medium | Full.
+   Only the stops that can make a difference for the chosen database: Medium (14000) is the same as Full
+   when it has no more players than that (the 95/96 imports: about 11000), so it shows Small | Full; with
+   no more than Small's 9900 there is nothing to choose and no slider. In the game's 640x480 units;
+   clicks on it are the port's, not the game's. */
+#define PS_X0 200
+#define PS_X1 440
+#define PS_Y  407                                  /* the track's row (knob 18 high) */
+int db_players(void);
+static int players_ui, players_drag, ps_n, ps_val[3];  /* the stops shown, and the size each sets */
+static void ps_stops(void) {
+    int np = db_players();                          /* -1: unknown - all three */
+    ps_n = 0;
+    if (np >= 0 && np <= 9900) return;
+    ps_val[ps_n++] = 0; if (np < 0 || np > 14000) ps_val[ps_n++] = 1; ps_val[ps_n++] = 2;
+}
+static int ps_stop_x(int i) { return PS_X0 + (PS_X1 - PS_X0) * i / (ps_n - 1); }
+static int ps_cur(void) {                           /* the stop showing the current size (Medium shown as Full without it) */
+    int v = g_player_size >= 0 && g_player_size <= 2 ? g_player_size : 2;
+    for (int i = 0; i < ps_n; i++) if (ps_val[i] == v) return i;
+    return ps_n - 1;
+}
+static int players_hit(int x, int y) { return players_ui && ps_n > 1 && x >= 158 && x < 482 && y >= 384 && y < 443; }
+static void players_set(int x) {
+    int best = 0; for (int i = 1; i < ps_n; i++) if (abs(x - ps_stop_x(i)) < abs(x - ps_stop_x(best))) best = i;
+    if (ps_val[best] != g_player_size) { g_player_size = ps_val[best]; present(); }
+}
+static void players_draw(float k, int ox, int oy) {
+    if (ps_n < 2) return;
+    mk = k; mox = ox; moy = oy;
+    SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+    const SDL_Color white = { 230, 230, 230, 255 }, yellow = { 255, 255, 40, 255 }, dim = { 170, 170, 170, 255 };
+    static const char *const names[3] = { "Small", "Medium", "Full" };
+    static const char *const counts[3] = { "up to 9,900 players, as the original DOS game", "up to 14,000 players", "up to 20,000 players" };
+    int cur = ps_cur(), v = ps_val[cur];
+    char cap[96];
+    if (v == 2 && ps_n == 2) snprintf(cap, sizeof cap, "Players: Full, all of this database's players");
+    else snprintf(cap, sizeof cap, "Players: %s, %s", names[v], counts[v]);
+    mfill(158, 384, 324, 59, 0, 0, 0, 150);                                        /* a dark panel, for reading */
+    mtext(cap, 0, 387, 640, 16, 11, white, 0, 1, 1);
+    mfill(PS_X0, PS_Y + 6, PS_X1 - PS_X0, 6, 0, 0, 0, 255);                       /* the track */
+    mfill(PS_X0 + 1, PS_Y + 7, PS_X1 - PS_X0 - 2, 4, 40, 40, 40, 255);
+    if (cur) mfill(PS_X0 + 1, PS_Y + 7, ps_stop_x(cur) - PS_X0 - 1, 4, 200, 200, 40, 255);
+    for (int i = 0; i < ps_n; i++) {                                                 /* the stops and their names */
+        mfill(ps_stop_x(i) - 1, PS_Y + 3, 3, 12, 0, 0, 0, 255);
+        mtext(names[ps_val[i]], ps_stop_x(i) - 40, PS_Y + 19, 80, 14, 10, i == cur ? yellow : dim, i == cur, 1, 1);
+    }
+    SDL_Rect kn = { ps_stop_x(cur) - 6, PS_Y, 12, 18 };
+    mbevel(kn, players_drag ? 200 : 170);
 }
 
 /* ---- Restore Backup panel: each saved game's backups (backup.c), newest first; Restore copies the
@@ -827,6 +1028,9 @@ static void dbp_date(int i, char *out, size_t n) {   /* "Wednesday 16th July 199
     const char *suf = (d % 100 >= 11 && d % 100 <= 13) ? "th" : d % 10 == 1 ? "st" : d % 10 == 2 ? "nd" : d % 10 == 3 ? "rd" : "th";
     snprintf(out, n, "%s %d%s %s %d", wd[(h + 6) % 7], d, suf, mo[m - 1], y);
 }
+static const char *dbp_title = "Choose Database", *dbp_choose = "Choose";
+/* the same panel for any short list (the Database Editor's Load Database): two columns of text */
+static const char *const *lst_c1, *const *lst_c2; static const char *lst_h1, *lst_h2;
 static void dbp_draw(float k, int ox, int oy, int pw, int ph) {
     mk = k; mox = ox; moy = oy;
     SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
@@ -838,14 +1042,14 @@ static void dbp_draw(float k, int ox, int oy, int pw, int ph) {
     mfill(DB_X0 + 1, Y0 + 1, W - 2, H - 2, 52, 52, 52, 245);
     mfill(DB_X0 + 1, Y0 + 1, W - 2, 33, 0, 72, 0, 255);
     mfill(DB_X0 + 1, Y0 + 34, W - 2, 1, 0, 0, 0, 255);
-    mtext("Choose Database", DB_X0, Y0, W, 35, 19, yellow, 1, 1, 1);
-    mtext("Database", DB_X0 + 22, Y0 + 52, 200, 15, 9, grey, 1, 0, 0);
-    mtext("First day of a new game", DB_X0 + 22 + 220, Y0 + 52, 200, 15, 9, grey, 1, 0, 0);
+    mtext(dbp_title, DB_X0, Y0, W, 35, 19, yellow, 1, 1, 1);
+    mtext(lst_c1 ? lst_h1 : "Database", DB_X0 + 22, Y0 + 52, 200, 15, 9, grey, 1, 0, 0);
+    mtext(lst_c1 ? lst_h2 : "First day of a new game", DB_X0 + 22 + 220, Y0 + 52, 200, 15, 9, grey, 1, 0, 0);
     mfill(DB_X0 + 16, Y0 + 70, W - 32, 1, 110, 110, 110, 255);
     for (int i = 0; i < DB_ROWS && dbp_top + i < dbp_n; i++) {
         int j = dbp_top + i; SDL_Rect r = dbp_row(i); const char *name; int d, m, y; char date[64];
-        if (!db_info(j, &name, &d, &m, &y)) continue;
-        dbp_date(j, date, sizeof date);
+        if (lst_c1) { name = lst_c1[j]; snprintf(date, sizeof date, "%s", lst_c2[j]); }
+        else { if (!db_info(j, &name, &d, &m, &y)) continue; dbp_date(j, date, sizeof date); }
         if (j == dbp_sel) mfill(r.x, r.y, r.w, r.h, 170, 170, 170, 255);
         else if (in_rect(r, bk_mx, bk_my)) mfill(r.x, r.y, r.w, r.h, 80, 80, 80, 255);
         SDL_Color c = j == dbp_sel ? dark : white;
@@ -860,14 +1064,23 @@ static void dbp_draw(float k, int ox, int oy, int pw, int ph) {
     for (int i = 0; i < 2; i++) {
         SDL_Rect b = dbp_btn(i);
         mbevel(b, in_rect(b, bk_mx, bk_my) ? 120 : 100);
-        mtext(i ? "Cancel" : "Choose", b.x, b.y, b.w, b.h, 13, white, 0, 1, 1);
+        mtext(i ? "Cancel" : dbp_choose, b.x, b.y, b.w, b.h, 13, white, 0, 1, 1);
     }
 }
-/* returns 1 if another database was chosen */
-int host_choose_database(void) {
-    dbp_n = db_count();
-    int was = db_selected(), chosen = -1;
-    if (dbp_n < 1) return 0;
+/* the panel: returns the database chosen (database.c's number), or -1 */
+static int dbp_run_n(const char *title, const char *choose, int n, int was);
+static int dbp_run(const char *title, const char *choose) { lst_c1 = 0; return dbp_run_n(title, choose, db_count(), db_selected()); }
+int host_pick_list(const char *title, const char *choose, const char *head1, const char *head2,
+                   const char *const *col1, const char *const *col2, int n, int sel) {
+    lst_c1 = col1; lst_c2 = col2; lst_h1 = head1; lst_h2 = head2;
+    int r = dbp_run_n(title, choose, n, sel);
+    lst_c1 = 0; return r;
+}
+static int dbp_run_n(const char *title, const char *choose, int n, int was) {
+    dbp_title = title; dbp_choose = choose;
+    dbp_n = n;
+    int chosen = -1;
+    if (dbp_n < 1) return -1;
     dbp_sel = was >= 0 ? was : 0; dbp_top = dbp_sel >= DB_ROWS ? dbp_sel - DB_ROWS + 1 : 0;
     dbp_open = 1; bk_mx = bk_my = -1;
     SDL_SetCursor(SDL_GetDefaultCursor()); SDL_ShowCursor(SDL_ENABLE);
@@ -913,12 +1126,88 @@ int host_choose_database(void) {
     }
     os_cursor_key = 0; os_cursor_visible = -1;
     SDL_PumpEvents(); SDL_FlushEvents(SDL_MOUSEBUTTONDOWN, SDL_MOUSEBUTTONUP);
-    if (chosen >= 0 && chosen != was) db_select(chosen);
     present();
+    return chosen;
+}
+/* ---- a report: lines of text to scroll through, and OK (the Database Editor's Test Database) ---- */
+#define RP_X0 24
+#define RP_X1 616
+#define RP_Y0 40
+#define RP_ROWS 18
+#define RP_ROW_H 18
+static const char *rp_title; static char **rp_lines; static int rp_n, rp_top;
+static SDL_Rect rp_btn(void) { SDL_Rect r = { 320 - 90, RP_Y0 + 70 + RP_ROWS * RP_ROW_H + 12, 180, 28 }; return r; }
+static int rp_bottom(void) { SDL_Rect b = rp_btn(); return b.y + b.h + 10; }
+static void rp_draw(float k, int ox, int oy, int pw, int ph) {
+    mk = k; mox = ox; moy = oy;
+    SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+    SDL_Rect all = { ox, oy, pw, ph }; SDL_SetRenderDrawColor(ren, 0, 0, 0, 140); SDL_RenderFillRect(ren, &all);
+    const SDL_Color yellow = { 255, 255, 40, 255 }, white = { 255, 255, 255, 255 }, red = { 255, 120, 110, 255 },
+                    green = { 140, 230, 140, 255 }, hint = { 170, 170, 170, 255 };
+    int W = RP_X1 - RP_X0, H = rp_bottom() - RP_Y0;
+    mfill(RP_X0, RP_Y0, W, H, 0, 0, 0, 255);
+    mfill(RP_X0 + 1, RP_Y0 + 1, W - 2, H - 2, 52, 52, 52, 245);
+    mfill(RP_X0 + 1, RP_Y0 + 1, W - 2, 33, 0, 72, 0, 255);
+    mfill(RP_X0 + 1, RP_Y0 + 34, W - 2, 1, 0, 0, 0, 255);
+    mtext(rp_title, RP_X0, RP_Y0, W, 35, 19, yellow, 1, 1, 1);
+    for (int i = 0; i < RP_ROWS && rp_top + i < rp_n; i++) {
+        const char *t = rp_lines[rp_top + i];
+        SDL_Color c = !strncmp(t, "No problems", 11) ? green : strstr(t, "problem") && t[0] != ' ' ? red : t[0] == ' ' || strstr(t, "note") ? white : hint;
+        mtext(t, RP_X0 + 16, RP_Y0 + 46 + i * RP_ROW_H, W - 32, RP_ROW_H, 9, c, t[0] != ' ', 0, 0);
+    }
+    if (rp_n > RP_ROWS) {
+        char l[64]; snprintf(l, sizeof l, "%d-%d of %d lines  (scroll for more)", rp_top + 1, rp_top + RP_ROWS < rp_n ? rp_top + RP_ROWS : rp_n, rp_n);
+        mtext(l, RP_X0 + 16, RP_Y0 + 50 + RP_ROWS * RP_ROW_H, W - 32, 14, 8, hint, 0, 0, 0);
+    }
+    SDL_Rect b = rp_btn(); mbevel(b, in_rect(b, bk_mx, bk_my) ? 120 : 100);
+    mtext("OK", b.x, b.y, b.w, b.h, 13, white, 0, 1, 1);
+}
+void host_report(const char *title, char **lines, int n) {
+    rp_title = title; rp_lines = lines; rp_n = n; rp_top = 0; rp_open = 1; bk_mx = bk_my = -1;
+    SDL_SetCursor(SDL_GetDefaultCursor()); SDL_ShowCursor(SDL_ENABLE);
+    present();
+    while (rp_open) {
+        SDL_Event e;
+        if (SDL_WaitEventTimeout(&e, 100)) do {
+            switch (e.type) {
+            case SDL_QUIT: fprintf(stderr, "window closed - exiting\n"); if (rec) fclose(rec); SDL_Quit(); exit(0);
+            case SDL_KEYDOWN:
+                if (shortcut_key(&e.key) || e.key.repeat) break;
+                if (e.key.keysym.sym == SDLK_ESCAPE || e.key.keysym.sym == SDLK_RETURN || e.key.keysym.sym == SDLK_KP_ENTER) rp_open = 0;
+                else if (e.key.keysym.sym == SDLK_UP) rp_top--;
+                else if (e.key.keysym.sym == SDLK_DOWN) rp_top++;
+                else if (e.key.keysym.sym == SDLK_PAGEUP) rp_top -= RP_ROWS;
+                else if (e.key.keysym.sym == SDLK_PAGEDOWN) rp_top += RP_ROWS;
+                break;
+            case SDL_MOUSEMOTION: bk_mx = e.motion.x; bk_my = e.motion.y; break;
+            case SDL_MOUSEWHEEL: rp_top -= e.wheel.y * 3; break;
+            case SDL_MOUSEBUTTONDOWN:
+                if (e.button.button == SDL_BUTTON_LEFT && in_rect(rp_btn(), e.button.x, e.button.y)) rp_open = 0;
+                break;
+            case SDL_WINDOWEVENT: if (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) update_title(); break;
+            default: break;
+            }
+            if (rp_top > rp_n - RP_ROWS) rp_top = rp_n - RP_ROWS;
+            if (rp_top < 0) rp_top = 0;
+        } while (rp_open && SDL_PollEvent(&e));
+        present();
+    }
+    os_cursor_key = 0; os_cursor_visible = -1;
+    SDL_PumpEvents(); SDL_FlushEvents(SDL_MOUSEBUTTONDOWN, SDL_MOUSEBUTTONUP);
+    present();
+}
+/* Change Database: returns 1 if another database was chosen */
+int host_choose_database(void) {
+    int was = db_selected(), chosen = dbp_run("Choose Database", "Choose");
+    if (chosen >= 0 && chosen != was) db_select(chosen);
     return chosen >= 0 && chosen != was;
 }
+/* Database Editor: which database to edit (the game's choice stays as it is); -1 = cancelled */
+int host_pick_database(void) { return dbp_run("Edit Which Database?", "Edit"); }
 
 void host_restore_backup(void) { bk_run(); }     /* overrides.c: the Options screen's Restore Backup */
+static void menu_run(void);
+void host_recomp_options(void) { menu_run(); }   /* overrides.c: the in-game Save Game & Options' Recomp Options */
 
 /* ---- player screen: the star rating in the blue position bar (rt/stars.c) ----
    Drawn as shapes at the window's own resolution, so it is sharp at any size: a full star per two
@@ -933,6 +1222,9 @@ static void star_check(const uint8_t *p, int w, int h, int st) {
     star_n = 0;
     if (!g_show_stars || w != 640 || h != 480 || g_star_player < 0 || !g_star_text[0]) return;
     if (!text_find(p, st, g_star_text, &x0, &y0, &x1, &y1) || y0 < 98 || y1 > 132) return;
+    /* the bar is one button across the screen, its text centred - not, say, Player Search's
+       "Goalkeepers" filter button in the same row, which holds a goalkeeper's "Goalkeeper" */
+    if (abs((x0 + x1) / 2 - w / 2) > 16) return;
     star_n = player_stars((uint32_t)g_star_player);
 }
 static void star_poly(float cx, float cy, float R, float px[10], float py[10]) {
@@ -999,12 +1291,14 @@ static void present(void) {
     star_check(p, w, h, st);
     text_dim_clear();
     grey_leagues(rgb, p, w, h, st, sharp);
+    { int x0, y0, x1, y1; players_ui = w == 640 && h == 480 && text_find(p, st, "Choose Leagues to Run", &x0, &y0, &x1, &y1);
+      if (players_ui) ps_stops(); }
     stat_colours(rgb, p, w, h, st, sharp);
     SDL_UpdateTexture(tex, NULL, rgb, w * 4);
     SDL_SetRenderDrawColor(ren, 0, 0, 0, 255); SDL_RenderClear(ren);
     SDL_RenderCopy(ren, tex, NULL, NULL);
     int toast = toast_alpha();
-    if (sharp || toast || g_menu_open || bk_open || dbp_open || star_n) {
+    if (sharp || toast || g_menu_open || bk_open || dbp_open || star_n || players_ui) {
         /* draw in real output pixels: where the scaled picture lies, as SDL placed it */
         int ow, oh; SDL_GetRendererOutputSize(ren, &ow, &oh);
         float k = (float)ow / w < (float)oh / h ? (float)ow / w : (float)oh / h;
@@ -1022,9 +1316,11 @@ static void present(void) {
             }
         }
         star_draw(k, ox, oy);
+        if (players_ui) players_draw(k, ox, oy);
         if (g_menu_open) menu_draw(k, ox, oy, (int)(w * k), (int)(h * k));
         if (bk_open) bk_draw(k, ox, oy, (int)(w * k), (int)(h * k));
         if (dbp_open) dbp_draw(k, ox, oy, (int)(w * k), (int)(h * k));
+        if (rp_open) rp_draw(k, ox, oy, (int)(w * k), (int)(h * k));
         if (shot_pending) shot_capture(ox, oy, (int)(w * k), (int)(h * k));   /* (F9: before the note) */
         if (toast) sharp_draw_note(ren, toast_text, (uint8_t)toast, k, ox, oy, (int)(w * k), (int)(h * k));
         SDL_RenderSetLogicalSize(ren, w, h);
@@ -1167,8 +1463,15 @@ static void pump(void) {
             fprintf(stderr, "window closed - exiting (progress since your last save is lost, as in DOS)\n");
             if (rec) fclose(rec);
             SDL_Quit(); exit(0);
-        case SDL_MOUSEMOTION: push_ev(EV_MOVE, e.motion.x, e.motion.y); break;
+        case SDL_MOUSEMOTION:
+            if (players_drag) players_set(e.motion.x);
+            push_ev(EV_MOVE, e.motion.x, e.motion.y); break;
         case SDL_MOUSEBUTTONDOWN: case SDL_MOUSEBUTTONUP: {
+            /* the Players slider on Choose Leagues to Run is the port's */
+            if (e.button.button == SDL_BUTTON_LEFT) {
+                if (e.type == SDL_MOUSEBUTTONUP && players_drag) { players_drag = 0; cfg_save(); present(); break; }
+                if (e.type == SDL_MOUSEBUTTONDOWN && players_hit(e.button.x, e.button.y)) { players_drag = 1; players_set(e.button.x); present(); break; }
+            }
             /* clicks on the match speed buttons are the port's, not the game's */
             if (e.button.button == SDL_BUTTON_LEFT) {
                 if (e.type == SDL_MOUSEBUTTONUP && speed_swallow_up) { speed_swallow_up = 0; break; }

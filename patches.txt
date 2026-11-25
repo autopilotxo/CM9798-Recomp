@@ -94,14 +94,25 @@
 044e7a replace esi = options_menu_tail();
 045751 after   hook_options_choice();
 
+# In-game "Save Game & Options": a fourth box, "Recomp Options" (choice 3), after Save Game, Credits and
+# CM Fan Club. The menu is "Save Game|%s" filled with "Credits|CM Fan Club" (0x10e27f8); the longer text is
+# put in free memory (rt/overrides.c). Choice 3 opens the port's F1 menu; the menu loop only acts on 0-2
+# and leaves on Done (0x63), so after it the screen is built again, as after Credits.
+012595 replace PUSH32(ingame_options_tail());
+012632 after   hook_ingame_options_choice();
+
 # Competition histories (past winners and runners-up) are built for a new game by 0x37238, from a
 # list of finals up to May 1997. A career starting earlier (CM2: 1995, 96/97: 1996) mustn't have
 # finals that haven't happened yet - and "last season's" winners (the Charity Shield, the cup
 # winners' European places) come from the newest entry. hook_trim_histories() drops entries after
-# the season before the career began. Called after each of the three calls to 0x37238.
+# the season before the career began. Called after the two calls to 0x37238 that start a new game -
+# not after the third (0x45426), which is Restore Game loading a saved career's competitions: there
+# it took out every final played since the career began, each time the game was loaded.
 045167 after hook_trim_histories();
 04518a after hook_trim_histories();
-045426 after hook_trim_histories();
+# ...and after that third call, careers saved before this was fixed get their finals back from the
+# club histories (hook_repair_histories; nothing changes in a list that is already right).
+045426 after hook_repair_histories();
 
 # Player screen: a star rating in the blue position bar (rt/stars.c, drawn by rt/sdl.c). The game
 # has just made the bar's text ("Forward (Right/Centre)", in eax) for player esi.
@@ -220,3 +231,15 @@
 # After a final the next host comes from a list that starts with 2002; a final before 1998 read in
 # front of it.
 03270a replace eax = next_host_name();
+
+# Select Team (Squad Details, and choosing a club): 45 clubs a page, and the page buttons along the bottom
+# are laid out (0x171e8) from a fixed list of widths: Done's, then ten pages'. Nine leagues' non-league
+# clubs (488 in the 97/98 database) make eleven pages, and the layout read past the list into the caller's
+# stack: the button got a nonsense size, and drawing it wrote far outside the screen. Now the list has a
+# width for every page (rt/overrides.c).
+075b2f replace hook_select_team_layout_args();
+075b35 replace hook_select_team_layout_pop();
+
+# How many of the database's players a new game keeps: the original's 9900 (reached with four leagues)
+# is now a setting - small 9900, medium 14000, full 20000 (rt/overrides.c, player_limit).
+039fc6 replace eax = player_limit();

@@ -208,22 +208,29 @@ imm 0x0106a275 0x1585303 0x45ffffd
 imm 0x0108c8bc 0x1585303 0x45ffffd
 
 # Players: 10000 records of 0x168 at 0x11f3de0 (they end where the calendar began), and the byte map of
-# used ids that genfictplyr scans, move above the 80MB of the rest, with room for 16000 (0x3e80).
-# The map is 0x270e bytes up to the next variable; 16000 bytes here.
-move 0x011f3de0 0x01562c5d 0x05000000
+# used ids that genfictplyr scans, move above the rest, with room for 24000 (0x5dc0) - enough for the
+# whole 97/98 database (19505) and the young players made each season. The table goes at 0x6000000
+# (to 0x683d600), above everything else moved here; GUEST_MEM_SIZE (rt/rt.h) is 112MB for it.
+# The map is 0x270e bytes up to the next variable; up to 0xfffe bytes at 0x5600000.
+move 0x011f3de0 0x01562c5d 0x06000000
 move 0x011ea0b8 0x011ec7c6 0x05600000
-imm 0x010665b8 0x270f 0x3e7f       # genfictplyr: the last id it may use
-imm 0x0103a57d 0x2710 0x3e80       # load_pldata 2: the table is full
-imm 0x0105583d 0x2710 0x3e80       # a player id is in range
-imm 0x0103c0eb 0x270f 0x3e7f       # creat_plhist: one empty history record per possible id
+imm 0x010665b8 0x270f 0x5dbf       # genfictplyr: the last id it may use
+imm 0x0103a57d 0x2710 0x5dc0       # load_pldata 2: the table is full
+imm 0x0105583d 0x2710 0x5dc0       # a player id is in range
+imm 0x0103c0eb 0x270f 0x5dbf       # creat_plhist: one empty history record per possible id
+# How many of the database's players a new game keeps (0x39b98, the PFLTR_PLDATA filter): 2475 a league
+# played, at least 5000 and no more than 9900 - reached with four leagues. That limit is now the
+# player_limit() setting (patches.txt, rt/overrides.c): small 9900 as the original, medium 14000,
+# full 20000 (every player of the 97/98 database; the database loader takes 20000 at most).
 # Lists with one entry per player, sized for 10000 in the original:
-# a search list of (id word, double) at 0x11d0820, filled by a loop over every player (now at 0x5610000)
-move 0x011d081e 0x011e8ebe 0x0560fffe
-# three lists [3][10000] of 4 bytes at 0x1567da0 (players grouped by status), now [3][16000]
-move 0x01567da0 0x01585260 0x05640000
-imm 0x01047175 0x9c40 0xfa00
-imm 0x01047cf7 0x9c40 0xfa00
-imm 0x01047d6a 0x9c40 0xfa00
+# a search list of (id word, double) at 0x11d0820, filled by a loop over every player: 24000 x 10 bytes
+# from 0x6900000
+move 0x011d081e 0x011e8ebe 0x068ffffe
+# three lists [3][10000] of 4 bytes at 0x1567da0 (players grouped by status), now [3][24000] from 0x6940000
+move 0x01567da0 0x01585260 0x06940000
+imm 0x01047175 0x9c40 0x17700
+imm 0x01047cf7 0x9c40 0x17700
+imm 0x01047d6a 0x9c40 0x17700
 # Match ids: each match played in a season gets one (14 bits in its fixture) and a record of 0x887
 # bytes in mchfax; 7000 a season in the original, and nine leagues play about 8600 league games alone
 imm 0x01053e53 0x1b58 0x3e80       # playfix 1: no id left

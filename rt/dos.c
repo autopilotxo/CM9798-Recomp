@@ -69,6 +69,15 @@ static void set_desc(uint32_t sel, uint32_t base, uint32_t limit) {
 /* ---------------- files ---------------- */
 #define MAXH 64
 static FILE *hfile[MAXH];
+/* The data editor (rt/editor.c) runs with plain files: none of the game's redirections (saves,
+   databases, pictures, autosaves, backups); its own folder (the chosen database's) first, then
+   altdir (the game folder: the editor's pictures and fonts). */
+static int plain_files; static char altdir[1024];
+void dos_plain_files(const char *dir, const char *alt) {
+    plain_files = 1; snprintf(gamedir, sizeof gamedir, "%s", dir); snprintf(altdir, sizeof altdir, "%s", alt ? alt : "");
+}
+void editor_before_write(const char *host);       /* rt/editor.c: a backup before a file is first changed */
+void (*g_dos_exit)(int code);                      /* rt/editor.c: the program ended (int 21h 4Ch) */
 
 static void copy_guest_str(char *dst, uint32_t lin, size_t max) {
     size_t i = 0; for (; i + 1 < max && M[lin + i]; i++) dst[i] = (char)M[lin + i]; dst[i] = 0;
@@ -90,12 +99,18 @@ static FILE *open_device(const char *dev) {
 #endif
 }
 
-/* DOS path -> host path inside gamedir, case-insensitive per component */
+/* DOS path -> host path inside gamedir (or, for a file that is only there, altdir), case-insensitive per component */
+static void map_path_in(const char *base, const char *dos, char *out, size_t max);
 static void map_path(const char *dos, char *out, size_t max) {
+    map_path_in(gamedir, dos, out, max);
+    struct stat st; char alt[1400];
+    if (altdir[0] && stat(out, &st) != 0) { map_path_in(altdir, dos, alt, sizeof alt); if (stat(alt, &st) == 0) snprintf(out, max, "%s", alt); }
+}
+static void map_path_in(const char *base, const char *dos, char *out, size_t max) {
     const char *p = dos;
     if (p[0] && p[1] == ':') p += 2;
     while (*p == '\\' || *p == '/') p++;
-    snprintf(out, max, "%s", gamedir);
+    snprintf(out, max, "%s", base);
     char comp[260];
     while (*p) {
         size_t n = 0; while (p[n] && p[n] != '\\' && p[n] != '/') n++;
@@ -238,19 +253,23 @@ static void int21(void) {
         if (dos_device(path)) { int h = alloc_handle(open_device(dos_device(path))); if (h < 0) fail(4); else SET16(eax, h); break; }
         map_path(path, host, sizeof host);
         if (getenv("CM_FILELOG")) fprintf(stderr, "[file] create %s (poll %lu)\n", path, g_polls);
-        backup_before_write(path);
-        save_redirect(path, host, sizeof host, 1);
-        autosave_redirect(path, host, sizeof host);
+        if (plain_files) editor_before_write(host);
+        else { backup_before_write(path);
+               save_redirect(path, host, sizeof host, 1);
+               autosave_redirect(path, host, sizeof host); }
         { FILE *f = fopen(host, "w+b"); int h = f ? alloc_handle(f) : -1; if (h < 0) fail(3); else SET16(eax, h); } break;
     case 0x3D: { copy_guest_str(path, dsedx, sizeof path);
         if (dos_device(path)) { int h = alloc_handle(open_device(dos_device(path))); if (h < 0) fail(4); else SET16(eax, h); break; }
         int mode = AL & 3;
         if (!mode && getenv("CM_FILELOG")) fprintf(stderr, "[file] read %s (poll %lu)\n", path, g_polls);
-        if (mode) backup_before_write(path); else autosave_before_read(path);
+        if (!plain_files) { if (mode) backup_before_write(path); else autosave_before_read(path); }
         map_path(path, host, sizeof host);
-        save_redirect(path, host, sizeof host, mode != 0);
-        if (mode) autosave_redirect(path, host, sizeof host); else if (!db_redirect(path, host, sizeof host)) pic_redirect(path, host, sizeof host);
-        FILE *f = mode == 0 ? open_commentary(path, host) : NULL;
+        if (plain_files) { if (mode) editor_before_write(host); }
+        else {
+            save_redirect(path, host, sizeof host, mode != 0);
+            if (mode) autosave_redirect(path, host, sizeof host); else if (!db_redirect(path, host, sizeof host)) pic_redirect(path, host, sizeof host);
+        }
+        FILE *f = mode == 0 && !plain_files ? open_commentary(path, host) : NULL;
         { struct stat st_; if (!stat(host, &st_) && S_ISDIR(st_.st_mode)) { fail(2); break; } }   /* a folder (e.g. the game
             asks for ""): DOS and Windows refuse it, Linux would open it and the game read rubbish */
         if (!f) f = fopen(host, mode == 0 ? "rb" : "r+b");
@@ -269,14 +288,14 @@ static void int21(void) {
         if (ecx == 0) { /* truncate at current position: not portable, ignore */ eax = 0; break; }
         eax = (uint32_t)fwrite(M + dsedx, 1, ecx, f); fflush(f); break; }
     case 0x41: copy_guest_str(path, dsedx, sizeof path); map_path(path, host, sizeof host);
-        save_redirect(path, host, sizeof host, 0);              /* Delete Game: the chosen database's slot */
+        if (!plain_files) save_redirect(path, host, sizeof host, 0);   /* Delete Game: the chosen database's slot */
         if (getenv("CM_FILELOG")) fprintf(stderr, "[file] delete %s -> %s\n", path, host);
         if (remove(host)) fail(2); break;
     case 0x42: { int h = ebx & 0xFFFF; FILE *f = h < MAXH ? hfile[h] : 0; if (!f || h < 5) { fail(6); break; }
         int32_t off = (int32_t)(((ecx & 0xFFFF) << 16) | (edx & 0xFFFF));
         if (fseek(f, off, AL == 0 ? SEEK_SET : AL == 1 ? SEEK_CUR : SEEK_END)) { fail(25); break; }
         long pos = ftell(f); SET16(eax, pos & 0xFFFF); SET16(edx, (pos >> 16) & 0xFFFF); break; }
-    case 0x43: copy_guest_str(path, dsedx, sizeof path); map_path(path, host, sizeof host); save_redirect(path, host, sizeof host, 0);
+    case 0x43: copy_guest_str(path, dsedx, sizeof path); map_path(path, host, sizeof host); if (!plain_files) save_redirect(path, host, sizeof host, 0);
         { struct stat st; if (stat(host, &st)) fail(2); else SET16(ecx, S_ISDIR(st.st_mode) ? 0x10 : 0x20); } break;
     case 0x44: if (AL == 0x00) { int h = ebx & 0xFFFF; SET16(edx, (h < 5 || (h < MAXH && hfile[h] == stdout)) ? 0x80D3 : 0x0002); }
                else if (AL == 0x08) SET16(eax, 1); else if (AL == 0x09) SET16(edx, 0);
@@ -287,7 +306,9 @@ static void int21(void) {
         SET16(eax, sel); break; }
     case 0x49: break;
     case 0x4A: break;                                          /* resize: accept */
-    case 0x4C: fflush(stdout); host_present(); if (trace) rt_dump_trace(); exit(AL);
+    case 0x4C: fflush(stdout); host_present(); if (trace) rt_dump_trace();
+        if (g_dos_exit) g_dos_exit(AL);                       /* the editor: back to the game (doesn't return) */
+        exit(AL);
     case 0x4E: { copy_guest_str(path, dsedx, sizeof path);
         char *slash = strrchr(path, '\\'); char dirpart[260] = "";
         if (slash) { memcpy(dirpart, path, (size_t)(slash - path)); dirpart[slash - path] = 0; snprintf(find_pat, sizeof find_pat, "%s", slash + 1); }
@@ -299,7 +320,8 @@ static void int21(void) {
     case 0x4F: if (!find_next()) fail(18); break;
     case 0x56: { char p2[260], h2[1400]; copy_guest_str(path, dsedx, sizeof path); copy_guest_str(p2, LIN(0, edi), sizeof p2);
         map_path(path, host, sizeof host); map_path(p2, h2, sizeof h2);
-        save_redirect(path, host, sizeof host, 1); save_redirect(p2, h2, sizeof h2, 1);
+        if (!plain_files) { save_redirect(path, host, sizeof host, 1); save_redirect(p2, h2, sizeof h2, 1); }
+        else { editor_before_write(host); editor_before_write(h2); }
         if (rename(host, h2)) fail(5); break; }
     case 0x57: if (AL == 0) { SET16(ecx, 0); SET16(edx, 0x21); } break;
     case 0x58: SET16(eax, 0); break;
@@ -450,3 +472,20 @@ void rt_out(uint32_t port, uint32_t v, int size) {
     default: if (trace) fprintf(stderr, "[io] out %04X <- %X\n", port, v); break;
     }
 }
+
+/* the editor has quit: close what it left open */
+void dos_close_files(void) {
+    for (int i = 5; i < MAXH; i++) if (hfile[i]) { if (hfile[i] != stdout && hfile[i] != stderr) fclose(hfile[i]); hfile[i] = 0; }
+    if (find_dir) { closedir(find_dir); find_dir = 0; }
+}
+
+/* ---- state (rt_internal.h): everything DOS keeps for the program that is running ---- */
+static const struct rt_var dos_vars[] = {
+    { gamedir, sizeof gamedir }, { &dta_lin, sizeof dta_lin }, { &dosmem_next, sizeof dosmem_next }, { &heap_next, sizeof heap_next },
+    { pm_vec_sel, sizeof pm_vec_sel }, { pm_vec_off, sizeof pm_vec_off }, { rm_vec, sizeof rm_vec },
+    { hfile, sizeof hfile }, { &find_dir, sizeof find_dir }, { find_pat, sizeof find_pat }, { find_dirpath, sizeof find_dirpath },
+    { vga_dac, sizeof vga_dac }, { &dac_w, sizeof dac_w }, { &dac_r, sizeof dac_r }, { &retrace, sizeof retrace },
+    { &plain_files, sizeof plain_files }, { altdir, sizeof altdir }, { &g_dos_exit, sizeof g_dos_exit },
+};
+size_t dos_state_size(void) { return rt_vars_size(dos_vars, (int)(sizeof dos_vars / sizeof dos_vars[0])); }
+void dos_state_swap(void *buf) { rt_vars_swap(dos_vars, (int)(sizeof dos_vars / sizeof dos_vars[0]), buf); }

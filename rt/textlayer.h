@@ -23,3 +23,5 @@ extern int8_t g_text_dx[], g_text_dy[];      /* after text_visible: glyph found 
 void hook_text_glyph(void);       /* patches.txt */
 void text_call_begin(void);       /* around the game's text routine (overrides.c) */
 void text_call_end(void);
+void text_reset(void);            /* forget every letter */
+void text_use_editor(int editor); /* the Database Editor's addresses (rt/editor.c), or the game's */

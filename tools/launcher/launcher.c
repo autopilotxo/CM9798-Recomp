@@ -1,12 +1,14 @@
 /* launcher.c - cm9798: the program players start. The game's code isn't distributed: the first time
  * it runs (and again after the port is updated), this makes it on the player's own machine from their
  * own CM2E16.EXE, then starts it:
- *   1. tools/cmgen turns CM2E16.EXE into C (gen/), exactly as make_gen.py does,
+ *   1. tools/cmgen turns CM2E16.EXE into C (gen/), exactly as make_gen.py does - and, when CM2ED.EXE (the
+ *      data editor that came with the game) is next to it, that too (gen/ed_*.c: the Database Editor),
  *   2. the bundled C compiler (build/zig) compiles that,
  *   3. and links it with the port's own code (build/lib/libcm9798rt.a) into build/cm9798-game(.exe),
  *      which it then starts from the game folder (so players only see cm9798 and cm9798setup).
  * Everything it needs is in the build folder next to it:
  *   build/data/       functions.json, labels.csv, patches.txt, overrides.txt, relocations.txt
+ *   build/data/editor/  the same for CM2ED.EXE
  *   build/include/    rt.h, rt_internal.h (what the generated C includes)
  *   build/lib/        libcm9798rt.a (+ on Windows the SDL import libraries and the icon)
  *   build/compiler.txt, cflags.txt, link.txt   one argument per line; {kit} = the build folder,
@@ -42,6 +44,9 @@
 #include <spawn.h>
 #include <signal.h>
 #include <sys/wait.h>
+#ifdef __linux__
+#include <sys/utsname.h>
+#endif
 #define MKDIR(p) mkdir(p, 0755)
 #define EXE ""
 extern char **environ;
@@ -57,7 +62,7 @@ extern char **environ;
 #include "../setup/font_data.h"
 #endif
 
-#define LAUNCHER_VERSION "1"
+#define LAUNCHER_VERSION "2"
 #define GAME_NAME "cm9798-game" EXE
 
 static char progdir[1100], kit[1200], logpath[1300];
@@ -156,7 +161,7 @@ static void ui_progress(int permille, const char *what) {
     while (SDL_PollEvent(&e)) if (e.type == SDL_QUIT) ui_cancelled = 1;
     SDL_SetRenderDrawColor(ren, 24, 40, 24, 255); SDL_RenderClear(ren);
     text(&title, 24, 16, "Getting the game ready", 255, 230, 60);
-    text(&body, 24, 54, "The first time it runs, the game is made from your own CM2E16.EXE.", 235, 235, 235);
+    text(&body, 24, 54, "The first time it runs, the game is built from your own executables.", 235, 235, 235);
     text(&body, 24, 74, "This takes a minute or two, and only happens once.", 150, 150, 150);
     SDL_Rect bar = { 24, 108, 512, 18 };
     SDL_SetRenderDrawColor(ren, 52, 70, 52, 255); SDL_RenderFillRect(ren, &bar);
@@ -368,7 +373,8 @@ static void make_stamp(char *out, size_t n) {
     char p[1400]; uint32_t c = 0;
     c = crc_update(c, (const unsigned char *)LAUNCHER_VERSION, strlen(LAUNCHER_VERSION));
     snprintf(p, sizeof p, "%s/lib/libcm9798rt.a", kit); c = crc_file(c, p);
-    for (int i = 0; data_files[i]; i++) { snprintf(p, sizeof p, "%s/data/%s", kit, data_files[i]); c = crc_file(c, p); }
+    for (int i = 0; data_files[i]; i++) { snprintf(p, sizeof p, "%s/data/%s", kit, data_files[i]); c = crc_file(c, p);
+                                          snprintf(p, sizeof p, "%s/data/editor/%s", kit, data_files[i]); c = crc_file(c, p); }
     const char *t[] = { "compiler.txt", "cflags.txt", "link.txt", NULL };
     for (int i = 0; t[i]; i++) { snprintf(p, sizeof p, "%s/%s", kit, t[i]); c = crc_file(c, p); }
     snprintf(out, n, "cm9798 %s %08x\n", LAUNCHER_VERSION, c);
@@ -445,6 +451,26 @@ static int build(const char *exe, char *err, size_t errn) {
     /* 1. CM2E16.EXE -> C */
     char data[1300]; snprintf(data, sizeof data, "%s/data", kit);
     if (cmgen_run(exe, data, gen, cmgen_cb, NULL, err, errn)) { logf_("%s\n", err); return -1; }
+    /* ...and the Database Editor, from CM2ED.EXE next to it (rt/editor.c). Without it - or if it's
+       another version - the game is made without the editor (the Options screen leaves it out). */
+    {
+        char edexe[1400], eddata[1350], ederr[600] = ""; int made = 0;
+        snprintf(edexe, sizeof edexe, "%s", exe);
+        char *s1 = strrchr(edexe, '/'), *s2 = strrchr(edexe, '\\'), *s = s1 > s2 ? s1 : s2;
+        snprintf(eddata, sizeof eddata, "%s/data/editor", kit);
+        for (int v = 0; v < 2 && !made; v++) {
+            if (s) snprintf(s + 1, sizeof edexe - (size_t)(s + 1 - edexe), "%s", v ? "cm2ed.exe" : "CM2ED.EXE");
+            else snprintf(edexe, sizeof edexe, "%s", v ? "cm2ed.exe" : "CM2ED.EXE");
+            if (!is_file(edexe)) continue;
+            if (cmgen_run(edexe, eddata, gen, cmgen_cb, NULL, ederr, sizeof ederr)) logf_("the Database Editor isn't included: %s\n", ederr);
+            else { made = 1; logf_("the Database Editor is included (%s)\n", edexe); }
+        }
+        if (!made) {                                  /* none of its files from an earlier build */
+            char p[1500]; const char *fixed[] = { "edfuncs.h", "edtable.c", "edretsites.c", NULL };
+            for (int i = 0; fixed[i]; i++) { snprintf(p, sizeof p, "%s/%s", gen, fixed[i]); remove(p); }
+            for (int i = 0; i < 100; i++) { snprintf(p, sizeof p, "%s/ed_%03d.c", gen, i); remove(p); }
+        }
+    }
 
     /* 2. compile */
     args_t cc = {0}, cfl = {0}, lnk = {0};
@@ -494,6 +520,20 @@ static int build(const char *exe, char *err, size_t errn) {
         snprintf(err, errn, "The compiler that makes the game is missing:\n%s\n\nPlease set the game up again with cm9798setup.", cc.v[0]); return -1;
 #endif
     }
+#ifdef __linux__
+    /* The bundled Zig is always asked for this system's kind of Linux by name (-target
+       <arch>-linux-gnu.<glibc version>): then it uses the C library headers it carries, as the release's
+       own library was built, and never looks for the system's. (SteamOS has none: without a target,
+       Zig stops with LibCStdLibHeaderNotFound.) Zig provides the newest glibc it knows if this one is newer. */
+    if (!(env_cc && *env_cc) && cc.n == 2 && !strcmp(cc.v[1], "cc") && strstr(cc.v[0], "zig")) {
+        char ver[32] = "", t[96]; struct utsname u;
+        size_t L = confstr(_CS_GNU_LIBC_VERSION, ver, sizeof ver);   /* "glibc 2.41" */
+        const char *v = L && L <= sizeof ver ? strrchr(ver, ' ') : NULL;
+        snprintf(t, sizeof t, "%s-linux-gnu%s%s", uname(&u) ? "x86_64" : u.machine, v ? "." : "", v ? v + 1 : "");
+        arg(&cc, "-target"); arg(&cc, t);
+        logf_("compiling for %s (the compiler's own C library headers)\n", t);
+    }
+#endif
     set_env("ZIG_GLOBAL_CACHE_DIR", cache); set_env("ZIG_LOCAL_CACHE_DIR", cache);
     if (read_args("cflags.txt", &cfl, err, errn) <= 0) {
         const char *d[] = { "-O1", "-w", "-std=c11", "-fno-strict-aliasing", "-fwrapv", NULL };
@@ -733,7 +773,7 @@ int main(int argc, char **argv) {
             char tail[1200] = "", msg[3400];
             if (strstr(err, "compiled") || strstr(err, "linked")) log_tail(tail, sizeof tail, 8);   /* what the compiler said */
             if (ui_cancelled) { ui_close(); return 1; }
-            snprintf(msg, sizeof msg, "The game couldn't be made from CM2E16.EXE.\n\n%s\n\n%s%s\n(The full details are in %s)", err,
+            snprintf(msg, sizeof msg, "The game couldn't be built from your executables.\n\n%s\n\n%s%s\n(The full details are in %s)", err,
                      tail[0] ? "The compiler said:\n" : "", tail, logpath);
             ui_error(msg); ui_close(); return 1;
         }

@@ -68,9 +68,12 @@ void input_mouse_move(int px, int py) {
     x = clampi(x, minx, maxx); y = clampi(y, miny, maxy);
     if (x != mx || y != my) { mx = x; my = y; queue_event(0x01); }
 }
+static unsigned press_serial;          /* every press, ever (rt/editor.c: one click, one action) */
+unsigned input_press_serial(void) { return press_serial; }
 void input_mouse_button(int b, int down) {
     if (b < 0 || b > 2) return;
     int bit = 1 << b;
+    if (down) press_serial++;
     if (down) { mbuttons |= bit; press_cnt[b]++; press_x[b] = mx; press_y[b] = my; queue_event((uint16_t)(0x02 << (2 * b))); }
     else { mbuttons &= ~bit; rel_cnt[b]++; rel_x[b] = mx; rel_y[b] = my; queue_event((uint16_t)(0x04 << (2 * b))); }
 }
@@ -120,3 +123,15 @@ int input_mouse_x(void) { return mx; }
 int input_mouse_y(void) { return my; }
 
 void input_flush_keys(void) { kq_head = kq_tail; pending_ext = -1; }
+
+/* ---- state (rt_internal.h): the program's mouse driver settings and pending events. The pointer's
+   position and buttons are the player's, shared by every program; keys not yet read are dropped. */
+static const struct rt_var input_vars[] = {
+    { &pending_ext, sizeof pending_ext }, { &minx, sizeof minx }, { &maxx, sizeof maxx }, { &miny, sizeof miny }, { &maxy, sizeof maxy },
+    { &h_mask, sizeof h_mask }, { &h_off, sizeof h_off }, { &h_sel, sizeof h_sel },
+    { press_cnt, sizeof press_cnt }, { rel_cnt, sizeof rel_cnt }, { press_x, sizeof press_x }, { press_y, sizeof press_y },
+    { rel_x, sizeof rel_x }, { rel_y, sizeof rel_y }, { evq, sizeof evq }, { &ev_head, sizeof ev_head }, { &ev_tail, sizeof ev_tail },
+    { &in_callback, sizeof in_callback },
+};
+size_t input_state_size(void) { return rt_vars_size(input_vars, (int)(sizeof input_vars / sizeof input_vars[0])); }
+void input_state_swap(void *buf) { rt_vars_swap(input_vars, (int)(sizeof input_vars / sizeof input_vars[0]), buf); kq_head = kq_tail = 0; }

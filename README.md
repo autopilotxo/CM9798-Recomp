@@ -16,7 +16,9 @@ Disclaimer: Claude AI was used to help create this recompilation.
 This repository and its releases contain **no game code and no game data**. The game is
 made on your own machine from your own copy of `CM2E16.EXE` v2.93 (size 1,407,137 bytes,
 CRC32 0x359E908E; any other version is refused), and the setup tool copies the database,
-pictures and sounds from your own installation.
+pictures and sounds from your own installation. The Database Editor is made the same way from
+your own `CM2ED.EXE` v2.00 (389,163 bytes, CRC32 0x11A01E20), the editor that came with the game;
+without it the game is made without the editor.
 
 ## Playing (release downloads)
 
@@ -41,6 +43,7 @@ compiler that comes with it can't run, so install Apple's command line tools onc
 - Import CM2 databases, including expansion packs, 96/97 data, pictures and sounds.
 - Euro 96 in careers on the CM2 database, qualifying and all, played the way Championship Manager 2 played it.
 - Selectable databases so you can play all 3 data sets on one executable.
+- The game's own data editor (CM2ED) built in: **Database Editor** on the Options screen edits any of the databases, with a backup of each file before it's first changed, and **Test Database** checks a database the way a new game reads it (players, clubs, managers, divisions, nations). Edits are used by new games. (Set up with 1.06 or earlier? Run `cm9798setup` again so `CM2ED.EXE` is copied.)
 - Autosave, and save backups.
 - Star ratings and colour coded player stats as quality of life features.
 
@@ -201,6 +204,7 @@ DLL), run `cm9798setup` into a new folder, and start `cm9798` there, and enjoy m
 | `tools/cmgen/`, `make_gen.py`, `gen.py`, `lift.py`, `relocate.py`, `disasm.py`, `tools/gen/` | The recompiler: reads your EXE and writes `gen/` (in C, or in Python) |
 | `tools/launcher/` | `cm9798`: makes the game from your EXE on first run, then starts it |
 | `functions.json`, `labels.csv` | Function addresses and names (no code) |
+| `editor/` | The same for the Database Editor (`CM2ED.EXE`): `cmgen CM2ED.EXE editor gen` adds it to `gen/` |
 | `patches.txt`, `relocations.txt`, `overrides.txt` | Hooks and memory changes applied while generating |
 | `rt/` | The runtime: DOS/video/input emulation, SDL front end, new features |
 | `tools/setup/` | The installer / importer |

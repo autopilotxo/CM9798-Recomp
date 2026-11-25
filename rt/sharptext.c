@@ -37,11 +37,12 @@ static const uint16_t cp1252_80[32] = {
 static uint16_t to_unicode(int ch) { return ch >= 0x80 && ch < 0xA0 ? cp1252_80[ch - 0x80] : (uint16_t)ch; }
 
 static int find_font(char *out, size_t n, const char *game_dir, const char *const names[]) {
-    char dirs[6][1024]; int nd = 0;
+    char dirs[7][1024]; int nd = 0;
     if (game_dir) snprintf(dirs[nd++], 1024, "%s/", game_dir);
     char *base = SDL_GetBasePath(); if (base) { snprintf(dirs[nd++], 1024, "%s", base); SDL_free(base); }
     const char *windir = getenv("WINDIR"); if (windir) snprintf(dirs[nd++], 1024, "%s/Fonts/", windir);
-    const char *home = getenv("HOME"); if (home) snprintf(dirs[nd++], 1024, "%s/.local/share/fonts/", home);
+    const char *home = getenv("HOME");
+    if (home) { snprintf(dirs[nd++], 1024, "%s/.local/share/fonts/", home); snprintf(dirs[nd++], 1024, "%s/.fonts/", home); }
     snprintf(dirs[nd++], 1024, "/usr/share/fonts/TTF/");
     for (int d = 0; d < nd; d++) for (int i = 0; names[i]; i++) {
         snprintf(out, n, "%s%s", dirs[d], names[i]);
@@ -85,6 +86,11 @@ static const char *const free_sans[] = {
     "/System/Library/Fonts/Supplemental/Microsoft Sans Serif.ttf",   /* macOS ships the original */
     "/Library/Fonts/Microsoft Sans Serif.ttf",
     "/System/Library/Fonts/Supplemental/Arial.ttf",
+    "/usr/share/fonts/noto/NotoSans-Regular.ttf",                    /* SteamOS and others: Noto */
+    "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+    "/usr/share/fonts/google-noto/NotoSans-Regular.ttf",
+    "/usr/share/fonts/google-noto-vf/NotoSans[wght].ttf",
+    "/usr/share/fonts/noto/NotoSans[wdth,wght].ttf",
     NULL };
 static const char *const free_lucida[] = {
     "/usr/share/fonts/TTF/DejaVuSans.ttf",
@@ -94,6 +100,9 @@ static const char *const free_lucida[] = {
     "/usr/share/fonts/truetype/DejaVuSans.ttf",
     "/System/Library/Fonts/LucidaGrande.ttc",                        /* macOS: Lucida's sister font */
     "/System/Library/Fonts/Supplemental/Verdana.ttf",
+    "/usr/share/fonts/noto/NotoSans-Regular.ttf",
+    "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+    "/usr/share/fonts/google-noto/NotoSans-Regular.ttf",
     NULL };
 static const char *const free_lucida_bold[] = {
     "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
@@ -101,6 +110,9 @@ static const char *const free_lucida_bold[] = {
     "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans-Bold.ttf",
     "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
     "/usr/share/fonts/truetype/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/noto/NotoSans-Bold.ttf",
+    "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
+    "/usr/share/fonts/google-noto/NotoSans-Bold.ttf",
     NULL };
 
 int sharp_init(const char *game_dir) {
@@ -111,15 +123,32 @@ int sharp_init(const char *game_dir) {
     find_font(path_sans, sizeof path_sans, game_dir, sans);
     find_font(path_lucida, sizeof path_lucida, game_dir, lucida);
     find_font(path_lucida_bold, sizeof path_lucida_bold, game_dir, lucida_bold);
+    /* stand-ins: by name in the game folder, next to the program and in the player's own fonts folders
+       (where a SteamOS player, whose system folders can't be changed, can put them); then where the
+       distributions put them; then whatever fontconfig has */
+    static const char *const sans_free[] = { "LiberationSans-Regular.ttf", "Arimo-Regular.ttf", "NotoSans-Regular.ttf", NULL };
+    static const char *const lucida_free[] = { "DejaVuSans.ttf", "NotoSans-Regular.ttf", NULL };
+    static const char *const lucida_free_bold[] = { "DejaVuSans-Bold.ttf", "NotoSans-Bold.ttf", NULL };
     int sub_sans = 0, sub_lucida = 0;
-    if (!path_sans[0] && (find_file(path_sans, sizeof path_sans, free_sans) ||
+    if (!path_sans[0] && (find_font(path_sans, sizeof path_sans, game_dir, sans_free) ||
+                          find_file(path_sans, sizeof path_sans, free_sans) ||
                           find_fc(path_sans, sizeof path_sans, "Liberation Sans:style=Regular", "LiberationSans") ||
-                          find_fc(path_sans, sizeof path_sans, "Arimo:style=Regular", "Arimo"))) sub_sans = 1;
-    if (!path_lucida[0] && (find_file(path_lucida, sizeof path_lucida, free_lucida) ||
-                            find_fc(path_lucida, sizeof path_lucida, "DejaVu Sans:style=Book", "DejaVuSans"))) {
-        sub_lucida = 1;                    /* its own bold, not Lucida's */
-        if (!find_file(path_lucida_bold, sizeof path_lucida_bold, free_lucida_bold))
-            find_fc(path_lucida_bold, sizeof path_lucida_bold, "DejaVu Sans:style=Bold", "DejaVuSans-Bold");
+                          find_fc(path_sans, sizeof path_sans, "Arimo:style=Regular", "Arimo") ||
+                          find_fc(path_sans, sizeof path_sans, "Noto Sans:style=Regular", "NotoSans") ||
+                          find_fc(path_sans, sizeof path_sans, "sans-serif:style=Regular", ""))) sub_sans = 1;
+    if (!path_lucida[0]) {
+        int own = find_font(path_lucida, sizeof path_lucida, game_dir, lucida_free);
+        if (own || find_file(path_lucida, sizeof path_lucida, free_lucida) ||
+            find_fc(path_lucida, sizeof path_lucida, "DejaVu Sans:style=Book", "DejaVuSans") ||
+            find_fc(path_lucida, sizeof path_lucida, "Noto Sans:style=Regular", "NotoSans")) {
+            sub_lucida = 1;                /* its own bold, not Lucida's */
+            if (!find_font(path_lucida_bold, sizeof path_lucida_bold, game_dir, lucida_free_bold) &&
+                !find_file(path_lucida_bold, sizeof path_lucida_bold, free_lucida_bold) &&
+                !find_fc(path_lucida_bold, sizeof path_lucida_bold, "DejaVu Sans:style=Bold", "DejaVuSans-Bold"))
+                find_fc(path_lucida_bold, sizeof path_lucida_bold, "Noto Sans:style=Bold", "NotoSans-Bold");
+        } else if (path_sans[0]) {         /* none of those: the sans stand-in for both */
+            snprintf(path_lucida, sizeof path_lucida, "%s", path_sans); sub_lucida = 1;
+        }
     }
     fprintf(stderr, "sharp text: MS Sans Serif -> %s%s\n", path_sans[0] ? path_sans : "(micross.ttf not found)", sub_sans ? " (stand-in)" : "");
     fprintf(stderr, "sharp text: Lucida Sans   -> %s%s\n", path_lucida[0] ? path_lucida : "(l_10646.ttf not found)", sub_lucida ? " (stand-in)" : "");

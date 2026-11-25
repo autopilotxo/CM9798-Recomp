@@ -163,17 +163,18 @@ static int in_body(Fn *s, uint32_t t) { return t >= s->P->base && t < s->P->base
 static int in_funcs(Fn *s, uint32_t t) { return t >= s->P->base && t < s->P->base + s->P->size && s->P->isfunc[t - s->P->base]; }
 static void add_label(Fn *s, uint32_t t) { s->P->label[t - s->P->base] = s->fid; }
 
+const char *g_fpfx = "f_";              /* function names: f_XXXXXX (the game) or e_XXXXXX (the editor) */
 static char *target(Fn *s, uint32_t t) {
     if (in_body(s, t)) {
         add_label(s, t);
         if (t <= s->cur) return T("BACKEDGE; goto L_%x;", t);
         return T("goto L_%x;", t);
     }
-    if (in_funcs(s, t)) return T("SPILL; f_%06x(); return;", t);
+    if (in_funcs(s, t)) return T("SPILL; %s%06x(); return;", g_fpfx, t);
     return T("SPILL; rt_call(0x%xu); return;", t);
 }
 static char *call(Fn *s, uint32_t t, uint32_t nxt) {
-    char *fn = in_funcs(s, t) ? T("f_%06x()", t) : T("rt_call(0x%xu)", t);
+    char *fn = in_funcs(s, t) ? T("%s%06x()", g_fpfx, t) : T("rt_call(0x%xu)", t);
     return T("PUSH32(0x%xu); SPILL; %s; RELOAD; if(g_ret!=0x%xu) return;", nxt, fn, nxt);
 }
 static char *shift_count(const char *op) {
@@ -582,7 +583,7 @@ void lift_function(prog_t *P, int fid, uint32_t start, const uint32_t *addrs, in
         s->cur = a;
         tails[i] = strdup((!ends_block(I->mn) && (!has_next || following != nxt)) ? target(s, nxt) : "");
     }
-    sb_printf(out, "void f_%06x(void) {\n  FLAGS_LOCAL;\n  TRACE_FN(0x%xu);", start, start);
+    sb_printf(out, "void %s%06x(void) {\n  FLAGS_LOCAL;\n  TRACE_FN(0x%xu);", g_fpfx, start, start);
     if (na && addrs[0] != start) { P->label[start - P->base] = fid; sb_printf(out, "\n  goto L_%x;", start); }
     for (int i = 0; i < na; i++) {
         uint32_t a = addrs[i]; ins_t *I = P->ins[a - P->base];

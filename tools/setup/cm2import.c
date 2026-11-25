@@ -23,7 +23,8 @@
  *   has and CM2 hasn't: Unique ID (numbered), Reputation (from ability), the rest left empty as in
  *   most 97/98 records. Nationalities are put in 97/98's spelling.
  * Managers: CM2's, plus 97/98's that don't clash with them (other countries' clubs and national
- *   teams); 97/98 managers of English, Scottish or Italian clubs become unattached.
+ *   teams); 97/98 managers become unattached when their club has its own from CM2 or an edition, or
+ *   when they joined it after the season starts.
  * Player histories: CM2's, in 97/98's layout.
  * French European Leagues (96/97's French edition, optional): its 65 French clubs, with their
  *   divisions (FD1, FD2, FNL), players and managers, replace the English edition's; English-edition
@@ -262,6 +263,39 @@ static const char *home_div(int h, const char *dv) {
     return dv;
 }
 static const char *division(const char *cm2div) { return !strcmp(cm2div, "INL") ? "" : cm2div; }
+/* the same person's name in two databases: case, Latin-1 accents ("Aragonés" = "Aragones") and CM2's
+   trailing '*' don't count */
+static int name_key(unsigned char ch) {
+    static const char *const fold =                       /* 0xC0..0xFF */
+        "AAAAAAACEEEEIIIIDNOOOOOxOUUUUYTsaaaaaaaceeeeiiiidnooooo/ouuuuyty";
+    return tolower(ch >= 0xC0 ? (unsigned char)fold[ch - 0xC0] : ch);
+}
+static int same_name(const char *a, const char *b) {
+    size_t na = strlen(a), nb = strlen(b);
+    while (na && a[na - 1] == '*') na--;
+    while (nb && b[nb - 1] == '*') nb--;
+    if (na != nb) return 0;
+    for (size_t i = 0; i < na; i++) if (name_key((unsigned char)a[i]) != name_key((unsigned char)b[i])) return 0;
+    return 1;
+}
+/* the club a player or manager names, by its full or short English name (97/98 writes "Sint-Truiden"
+   for K. Sint-Truidense VV); -1 = none */
+static int club_named(const DB *t, const char *name) {
+    char l[64], sh[64];
+    for (int i = 0; i < t->n; i++) { gets_(t, db_rec(t, i), "UK Long Name", l, sizeof l); if (!strcasecmp(l, name)) return i; }
+    for (int i = 0; i < t->n; i++) { gets_(t, db_rec(t, i), "UK Short Name", sh, sizeof sh); if (sh[0] && !strcasecmp(sh, name)) return i; }
+    /* "Ayr U": each word the start of one of the club's, in order - when only one club fits */
+    char q[64], *qw[8]; int nq = 0, found = -1, nfound = 0; snprintf(q, sizeof q, "%s", name);
+    for (char *w = strtok(q, " .-"); w && nq < 8; w = strtok(NULL, " .-")) qw[nq++] = w;
+    for (int i = 0; i < t->n && nq; i++) {
+        char *ww[12]; int nw = 0; gets_(t, db_rec(t, i), "UK Long Name", l, sizeof l);
+        for (char *w = strtok(l, " .-"); w && nw < 12; w = strtok(NULL, " .-")) ww[nw++] = w;
+        if (nw < nq) continue;
+        int ok = 1; for (int k = 0; k < nq && ok; k++) if (strncasecmp(ww[k], qw[k], strlen(qw[k]))) ok = 0;
+        if (ok) { found = i; nfound++; }
+    }
+    return nfound == 1 ? found : -1;
+}
 
 /* is `s` a nation the engine knows: a national team's name in any language, long or short?
    (the game stops with "Unrecognised Nation" otherwise) */
@@ -716,6 +750,9 @@ int cm2_import(const char *cm2, const char *game, const char *pictures_from, con
         if (match[j] >= 0) {
             o = db_rec(&T, match[j]);
             if (is_continent(nt)) continue;                       /* national teams: as in 97/98 */
+            char n7[40]; gets_(&T, o, "Nation", n7, sizeof n7);   /* a club 97/98 has as gone (Seraing: "EXTINCT",
+                                                                     merged in 1996) is a club of its country here */
+            if (is_continent(n7)) { sets(&T, o, "Nation", team_nation(nt)); if (logf) fprintf(logf, "  club %s: %s, not %s\n", ln, team_nation(nt), n7); }
             char dv7[16]; gets_(&T, o, "Division", dv7, sizeof dv7);
             if (dv[0] || cm2_league(dv7)) {                       /* CM2's leagues: CM2's divisions */
                 sets(&T, o, "Division", division(dv));
@@ -852,7 +889,9 @@ int cm2_import(const char *cm2, const char *game, const char *pictures_from, con
         for (int i = 0; i < md->n; i++) {
             uint8_t *r = db_rec(md, i); char v[64], club[64];
             gets_(md, r, "M/Club", club, sizeof club);
-            int c = src ? club_of(&ta[src - 1], a2m[src - 1], club, "") : club_of(&t2e, e2m, club, "");
+            /* an edition's short names ("Real Betis", "Racing", "Deportivo") can start several of its clubs
+               (Real Betis B, Racing de Ferrol): the biggest of its own country's is the one */
+            int c = src ? club_of(&ta[src - 1], a2m[src - 1], club, homes[add_home[src - 1]].nation) : club_of(&t2e, e2m, club, "");
             if (src && c < 0) continue;                        /* an edition: its own country's clubs only */
             if (!src && nadd && c == -1 && club[0] && resolve_in(&t2e, club, "") >= 0) continue;   /* replaced */
             if (nadd) {                                        /* the same man in an edition (a later one, or already in) */
@@ -860,13 +899,13 @@ int cm2_import(const char *cm2, const char *game, const char *pictures_from, con
                 gets_(md, r, "First Name", a, sizeof a); gets_(md, r, "Second Name", b, sizeof b);
                 for (int k = 0; k < M.n && !dup; k++) {
                     gets_(&M, db_rec(&M, k), "First Name", fa, sizeof fa); gets_(&M, db_rec(&M, k), "Second Name", fb, sizeof fb);
-                    if (!strcasecmp(a, fa) && !strcasecmp(b, fb)) dup = 1;
+                    if (same_name(a, fa) && same_name(b, fb)) dup = 1;
                 }
                 for (int e = 0; e < nadd && !dup && !src; e++) for (int k = 0; k < ma[e].n && !dup; k++) {
                     char fc[64]; gets_(&ma[e], db_rec(&ma[e], k), "M/Club", fc, sizeof fc);
-                    if (club_of(&ta[e], a2m[e], fc, "") < 0) continue;
+                    if (club_of(&ta[e], a2m[e], fc, homes[add_home[e]].nation) < 0) continue;
                     gets_(&ma[e], db_rec(&ma[e], k), "First Name", fa, sizeof fa); gets_(&ma[e], db_rec(&ma[e], k), "Second Name", fb, sizeof fb);
-                    if (!strcasecmp(a, fa) && !strcasecmp(b, fb)) dup = 1;
+                    if (same_name(a, fa) && same_name(b, fb)) dup = 1;
                 }
                 if (dup) continue;
             }
@@ -901,23 +940,21 @@ int cm2_import(const char *cm2, const char *game, const char *pictures_from, con
         int dup = 0;
         for (int k = 0; k < ncm && !dup; k++) {
             gets_(&M, db_rec(&M, k), "First Name", a, sizeof a); gets_(&M, db_rec(&M, k), "Second Name", b, sizeof b);
-            if (!strcasecmp(a, fn) && !strcasecmp(b, sn)) dup = 1;
+            if (same_name(a, fn) && same_name(b, sn)) dup = 1;
         }
         if (dup) continue;
         uint8_t *o = db_add(&M); memcpy(o, r, (size_t)M.rs); kept++;
         gets_(&M, o, "Current Club", club, sizeof club);
-        if (club[0]) {                                   /* a club whose 95/96 manager comes from CM2? */
-            int clash = 0;
-            for (int k = 0; k < T.n && !clash; k++) {
-                char tn[40], dv[16]; gets_(&T, db_rec(&T, k), "UK Long Name", tn, sizeof tn);
-                if (strcmp(tn, club)) continue;
-                gets_(&T, db_rec(&T, k), "Nation", a, sizeof a); gets_(&T, db_rec(&T, k), "Division", dv, sizeof dv);
-                if (cm2_league(dv) || !strcmp(a, "England") || !strcmp(a, "Scotland") || !strcmp(a, "Italy") || !strcmp(a, "Wales") ||
-                    0) clash = 1;
-                for (int e = 0; e < nadd; e++) if (!strcmp(a, homes[add_home[e]].nation)) clash = 1;
-            }
-            for (int k = 0; k < ncm && !clash; k++) { gets_(&M, db_rec(&M, k), "Current Club", a, sizeof a); if (!strcmp(a, club)) clash = 1; }
-            if (clash) { sets(&M, o, "Current Club", ""); sets(&M, o, "Date Joined", ""); freed++; }
+        if (club[0]) {
+            /* his club already has its manager of this season from CM2 or an edition, or he came to it after
+               the season starts (97/98's dates are its own: "06.97"): unattached. A long-serving one keeps it. */
+            int ci = club_named(&T, club), clash = 0;
+            for (int k = 0; k < ncm && !clash && ci >= 0; k++) { gets_(&M, db_rec(&M, k), "Current Club", a, sizeof a); if (a[0] && club_named(&T, a) == ci) clash = 1; }
+            gets_(&M, o, "Date Joined", a, sizeof a);
+            int jm = 0, jy = -1;
+            if (sscanf(a, "%d.%d", &jm, &jy) == 2) { jy += jy < 50 ? 2000 : 1900; if (jy > sy || (jy == sy && jm > sm)) clash = 2; }
+            if (clash) { sets(&M, o, "Current Club", ""); sets(&M, o, "Date Joined", ""); freed++;
+                         if (logf) fprintf(logf, "  manager %s %s: unattached (%s %s)\n", fn, sn, club, clash == 1 ? "has its own manager" : "joined later"); }
         }
         gets_(&M, o, "National Job", job, sizeof job);
         for (int k = 0; k < nnat; k++) if (!strcmp(job, natjob[k])) { sets(&M, o, "National Job", ""); sets(&M, o, "Date Started", ""); }

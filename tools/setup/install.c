@@ -341,7 +341,8 @@ int install_same_folder(const char *a, const char *b) {
 /* ------------------------------------------------------------------ install */
 /* the files the port reads from the game folder (beyond the database, pictures and saves) */
 static const char *const game_files[] = { "CM2E16.EXE", "MY?.FNT", "PRECALCS.BIN", "EXNMES.TXT", "ENG_MTCH.TXT",
-                                          "MTCHDSC*.TXT", "PITCH.GFX", "CONFIG.DAT", NULL };
+                                          "MTCHDSC*.TXT", "PITCH.GFX", "CONFIG.DAT",
+                                          "CM2ED.EXE", "GAZZA.PCX", NULL };          /* the Database Editor (rt/editor.c) */
 static const char *const db_files[] = { "PLAYERS.DB1", "TMDATA.DB1", "MGDATA.DB1", "PLHIST98.BIN", NULL };
 
 static void write_cfg_9798(const char *dir) {
@@ -470,7 +471,7 @@ int install_run(const struct install_opts *o, install_log_fn log) {
         /* the build kit: the first time the game is started, cm9798 makes it from CM2E16.EXE with this */
         { char from[1300], to[1300]; snprintf(from, sizeof from, "%s/build", o->port_dir); snprintf(to, sizeof to, "%s/build", o->dst);
           if (is_dir(from)) {
-              say("The build kit (the game is made from your CM2E16.EXE the first time it's started)...\n");
+              say("The build kit (the game is built from your executables the first time it's started)...\n");
               int k = put_kit(from, to); n_copied += k; say("  %d files\n", k);   /* (an older game is made again: game.stamp) */
           } else say("  no build folder next to the installer - the game can't be made without it\n"); }
 #ifdef __APPLE__

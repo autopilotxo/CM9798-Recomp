@@ -68,23 +68,51 @@ void rt_dump_trace(void) {
     fprintf(stderr, "\n");
 }
 
-/* ---------- return sites ---------- */
+/* ---------- the running program's tables: the game's (gen/), or the editor's (rt/editor.c) ---------- */
 extern const uint32_t g_retsites[]; extern const unsigned g_nretsites;
+static const struct gfunc *p_funcs; static unsigned p_nfuncs;       /* NULL: the game's */
+static const uint32_t *p_rets; static unsigned p_nrets;
+void rt_set_program(const struct gfunc *f, unsigned nf, const uint32_t *ret, unsigned nret) {
+    p_funcs = f; p_nfuncs = nf; p_rets = ret; p_nrets = nret;
+}
+
+/* ---------- return sites ---------- */
 int rt_is_retaddr(uint32_t a) {
     if (a < CODE_BASE || a >= DATA_BASE) return 1;     /* outside code (e.g. host sentinel): plain return */
-    unsigned lo = 0, hi = g_nretsites;
-    while (lo < hi) { unsigned m = (lo + hi) / 2; if (g_retsites[m] == a) return 1; if (g_retsites[m] < a) lo = m + 1; else hi = m; }
+    const uint32_t *r = p_funcs ? p_rets : g_retsites; unsigned lo = 0, hi = p_funcs ? p_nrets : g_nretsites;
+    while (lo < hi) { unsigned m = (lo + hi) / 2; if (r[m] == a) return 1; if (r[m] < a) lo = m + 1; else hi = m; }
     return 0;
 }
 
 /* ---------- dispatch ---------- */
 gfn rt_lookup(uint32_t a) {
-    unsigned lo = 0, hi = g_nfuncs;
+    const struct gfunc *F = p_funcs ? p_funcs : g_funcs; unsigned lo = 0, hi = p_funcs ? p_nfuncs : g_nfuncs;
     while (lo < hi) { unsigned mid = (lo + hi) / 2;
-        if (g_funcs[mid].addr == a) return g_funcs[mid].fn;
-        if (g_funcs[mid].addr < a) lo = mid + 1; else hi = mid; }
+        if (F[mid].addr == a) return F[mid].fn;
+        if (F[mid].addr < a) lo = mid + 1; else hi = mid; }
     return 0;
 }
+
+/* ---------- state (rt_internal.h) ---------- */
+size_t rt_vars_size(const struct rt_var *v, int n) { size_t t = 0; for (int i = 0; i < n; i++) t += v[i].n; return t; }
+void rt_vars_swap(const struct rt_var *v, int n, unsigned char *buf) {
+    for (int i = 0; i < n; i++) {
+        unsigned char *p = v[i].p;
+        for (size_t k = 0; k < v[i].n; k++) { unsigned char t = p[k]; p[k] = buf[k]; buf[k] = t; }
+        buf += v[i].n;
+    }
+}
+static const struct rt_var rt_vars[] = {
+    { &M, sizeof M }, { &eax, 4 }, { &ecx, 4 }, { &edx, 4 }, { &ebx, 4 }, { &esp, 4 }, { &ebp, 4 }, { &esi, 4 }, { &edi, 4 },
+    { &g_cf, 4 }, { &g_zf, 4 }, { &g_sf, 4 }, { &g_of, 4 }, { &g_df, 4 }, { &g_ret, 4 },
+    { sel_, sizeof sel_ }, { segbase_, sizeof segbase_ },
+    { desc_base, sizeof desc_base }, { desc_limit, sizeof desc_limit }, { desc_used, sizeof desc_used },
+    { fst_, sizeof fst_ }, { &ftop, sizeof ftop }, { &fsw, sizeof fsw }, { &fcw, sizeof fcw },
+    { &p_funcs, sizeof p_funcs }, { &p_nfuncs, sizeof p_nfuncs }, { &p_rets, sizeof p_rets }, { &p_nrets, sizeof p_nrets },
+};
+#define NV(v) (int)(sizeof v / sizeof v[0])
+size_t rt_state_size(void) { return rt_vars_size(rt_vars, NV(rt_vars)); }
+void rt_state_swap(void *buf) { rt_vars_swap(rt_vars, NV(rt_vars), buf); }
 void rt_call(uint32_t t) {
     gfn f = rt_lookup(t);
     if (f) { f(); return; }

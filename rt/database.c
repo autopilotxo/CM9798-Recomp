@@ -57,7 +57,7 @@
 
 #define MAXDB 16
 static const char *const db_files[] = { "players.db1", "tmdata.db1", "mgdata.db1", "plhist98.bin", NULL };
-static struct db { char dir[64], name[48], leagues[160]; int start, day, month, own_sounds; } dbs[MAXDB];
+static struct db { char dir[64], name[48], leagues[160]; int start, day, month, own_sounds, imported; } dbs[MAXDB];
 static int ndb, sel = -1, scanned, in_frontend, career = -1;   /* career: database of the game being played */
 static char choice[64] = "9798";
 
@@ -141,6 +141,7 @@ static void read_info(struct db *d, const char *path) {
             d->start = y; d->day = dd; d->month = mm; }
         else if (sscanf(line, " leagues = %127[^\r\n]", v) == 1) snprintf(d->leagues, sizeof d->leagues, " %s ", v);
         else if (sscanf(line, " sounds = %127s", v) == 1) d->own_sounds = !strcasecmp(v, "own");
+        else if (sscanf(line, " importer = %127s", v) == 1) d->imported = 1;   /* made from CM2 by the setup */
     }
     fclose(f);
 }
@@ -222,9 +223,52 @@ static const char *save_db(int write) {
     int use = (write || !in_frontend) && career >= 0 ? career : sel;
     return use >= 0 ? dbs[use].dir : "9798";
 }
+/* The save folder (F1, Gameplay, Save folder; cm9798.cfg "saves = <folder>"): <game>/saves unless the
+   player chose another. It holds a folder per database, as saves/ does. */
+static char saves_root[1024];                          /* "": the default, <game>/saves */
+void cm_set_saves_root(const char *p) {
+    snprintf(saves_root, sizeof saves_root, "%s", p ? p : "");
+    size_t L = strlen(saves_root);
+    while (L > 1 && (saves_root[L - 1] == '/' || saves_root[L - 1] == '\\') && !(L == 3 && saves_root[1] == ':')) saves_root[--L] = 0;
+}
+const char *cm_saves_root_custom(void) { return saves_root; }
+void cm_saves_root(char *out, size_t n) {
+    if (saves_root[0]) snprintf(out, n, "%s", saves_root); else snprintf(out, n, "%s/saves", cm_game_dir());
+}
+/* any saved games in this save folder (a database folder with its slot list)? */
+int cm_saves_in(const char *root) {
+    DIR *d = opendir(root); struct dirent *e; int k = 0; char sub[1400], f[1500];
+    if (!d) return 0;
+    while (!k && (e = readdir(d))) {
+        if (e->d_name[0] == '.') continue;
+        snprintf(sub, sizeof sub, "%s/%s", root, e->d_name);
+        if (is_dir(sub) && find_in(sub, "GAMESS16.IDX", f, sizeof f)) k = 1;
+    }
+    closedir(d); return k;
+}
+/* everything in one save folder copied into another (files already there are kept) */
+static int copy_tree(const char *from, const char *to) {
+    DIR *d = opendir(from); struct dirent *e; int k = 0;
+    if (!d) return 0;
+    if (!is_dir(to)) MKDIR(to);
+    while ((e = readdir(d))) {
+        if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) continue;
+        char a[1400], c[1400]; struct stat st;
+        snprintf(a, sizeof a, "%s/%s", from, e->d_name); snprintf(c, sizeof c, "%s/%s", to, e->d_name);
+        if (is_dir(a)) k += copy_tree(a, c);
+        else if (stat(c, &st)) { if (cm_copy_file(a, c)) k++; else fprintf(stderr, "saves: could not copy %s\n", a); }
+    }
+    closedir(d); return k;
+}
+int cm_copy_saves(const char *from, const char *to) {
+    int k = copy_tree(from, to);
+    fprintf(stderr, "saves: copied %d files from %s to %s (the originals are kept)\n", k, from, to);
+    return k;
+}
+
 /* folders are made when written to (write = 1), not when only looked at */
 int cm_saves_dir(int write, char *out, size_t n) {
-    char root[1100]; snprintf(root, sizeof root, "%s/saves", cm_game_dir());
+    char root[1100]; cm_saves_root(root, sizeof root);
     snprintf(out, n, "%s/%s", root, save_db(write));
     if (write) { mkdirs(root); mkdirs(out); }
     return is_dir(out);
@@ -270,6 +314,7 @@ static int copy_files(const char *from, const char *to, int slot_only) {
 /* first run: the game folder's saves (and the port's autosaves/backups) -> saves/9798 */
 static void migrate_saves(void) {
     char root[1100], dst[1200], a[1400], c[1500];
+    if (saves_root[0]) return;                         /* a save folder of the player's own: nothing to bring */
     snprintf(root, sizeof root, "%s/saves", cm_game_dir());
     if (is_dir(root)) return;
     if (!mkdirs(root)) return;
@@ -317,6 +362,8 @@ int db_info(int i, const char **name, int *day, int *month, int *year) {
     *name = dbs[i].name; *day = dbs[i].day; *month = dbs[i].month; *year = dbs[i].start;
     return 1;
 }
+const char *db_folder(int i) { scan(); return i >= 0 && i < ndb ? dbs[i].dir : NULL; }
+const char *db_leagues_of(int i) { scan(); return i >= 0 && i < ndb ? dbs[i].leagues : ""; }
 void db_select(int i) {
     scan(); if (i < 0 || i >= ndb) return;
     sel = i; snprintf(choice, sizeof choice, "%s", dbs[sel].dir);
@@ -343,12 +390,37 @@ int db_redirect(const char *dos_path, char *host, size_t n) {
     return 1;
 }
 
+/* ---- how many players the chosen database has (the Players slider on Choose Leagues to Run) ----
+   From PLAYERS.DB1's header and size alone; remembered until another database is chosen. -1: unknown. */
+int db_players(void) {
+    static char cached[64]; static int n = -1;
+    scan();
+    if (sel < 0) return -1;
+    if (!strcmp(cached, dbs[sel].dir)) return n;
+    snprintf(cached, sizeof cached, "%s", dbs[sel].dir); n = -1;
+    char dir[1200], path[1300]; snprintf(dir, sizeof dir, "%s/databases/%s", cm_game_dir(), dbs[sel].dir);
+    if (!find_in(dir, "PLAYERS.DB1", path, sizeof path)) return n;
+    FILE *f = fopen(path, "rb"); if (!f) return n;
+    uint8_t h[4096]; size_t got = fread(h, 1, sizeof h, f);
+    fseek(f, 0, SEEK_END); long len = ftell(f); fclose(f);
+    int nf = got > 2 ? h[0] | h[1] << 8 : 0, o = 2, rs = 0, uid = 0;
+    if (nf <= 0 || nf > 80) return n;
+    for (int i = 0; i < nf; i++) {
+        if ((size_t)o + 1 >= got || (size_t)(o + 1 + h[o] + 4) > got) return n;
+        int l = h[o];
+        if (l == 9 && !memcmp(h + o + 1, "Unique ID", 9) && h[o + 1 + l] == 0 && h[o + 2 + l] == 4) uid = 1;
+        rs += h[o + 2 + l]; o += 1 + l + 4;
+    }
+    if (rs > 0 && len > o + (uid ? 6 : 2)) n = (int)((len - o - (uid ? 6 : 2)) / rs);
+    return n;
+}
+
 /* ---- "Championship Manager 2" backgrounds (F1, Graphics; cm9798.cfg "backgrounds = cm2") ----
    CM2 (CM2.EXE) has one background at a time: STADPIC1-5.PCX in turn, the next one each day the game
    moves on, starting with STADPIC2 when a game begins; and on a club's screens the club's own picture
    (its name, spaces and dots as "_", 8 letters, .PCX) if there is one, else the stadium picture.
    Here every picture 97/98 asks for (generic, country, competition, trophy, club, title screens) becomes
-   that: a CM2 picture of the same name if a CM2 database's pictures folder has one (the clubs; the setup
+   that: a CM2 picture of the same name if a CM2 pictures folder has one (cm2_pic_dir says which; the clubs: the setup
    copies CM2's club pictures and STADPIC1-5 there), else today's STADPIC. Only the publishers' logo
    screens stay. With no STADPIC files anywhere, 97/98's pictures are used as before. */
 int g_cm2_backgrounds;
@@ -360,6 +432,11 @@ static long bg_days(int y, int m, int d) {          /* days since 1970-01-01 */
     long doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1; long doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
     return era * 146097 + doe - 719468;
 }
+/* Which folders: a database's own pictures are used only while that database is in use. First the
+   pictures folder of the database being played (if it isn't 97/98's, which has no CM2 pictures); then,
+   for whatever it doesn't have, the databases the setup imported from CM2 (database.cfg "importer =
+   ..."; 9596), the defaults; then the game folder (STADPICn put there by hand). A database made by
+   hand (no importer line) lends its pictures to no other database. */
 static int cm2_pic_dir(int k, char *dir, size_t n, int game_folder) {   /* k-th folder of CM2 pictures (0: none left) */
     int use = !in_frontend && career >= 0 ? career : sel, i = 0;
     if (use >= 0 && strcmp(dbs[use].dir, "9798")) {    /* the database being played first, if it's a CM2 one */
@@ -367,10 +444,10 @@ static int cm2_pic_dir(int k, char *dir, size_t n, int game_folder) {   /* k-th 
         k--;
     }
     for (i = 0; i < ndb; i++) {
-        if (i == use || !strcmp(dbs[i].dir, "9798")) continue;
+        if (i == use || !strcmp(dbs[i].dir, "9798") || !dbs[i].imported) continue;
         if (k-- == 0) { snprintf(dir, n, "%s/databases/%s/pictures", cm_game_dir(), dbs[i].dir); return 1; }
     }
-    if (game_folder && k == 0) { snprintf(dir, n, "%s", cm_game_dir()); return 1; }   /* STADPICn put there by hand */
+    if (game_folder && k == 0) { snprintf(dir, n, "%s", cm_game_dir()); return 1; }   /* STADPIC1-5 put there by hand */
     return 0;
 }
 static int cm2_find(const char *b, char *host, size_t n, int game_folder) {   /* (the game folder holds 97/98's) */

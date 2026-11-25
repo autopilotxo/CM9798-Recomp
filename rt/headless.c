@@ -288,6 +288,7 @@ void host_set_database(int start_year) { fprintf(stderr, "[database] now startin
    CM_BK_RESTORE=<slot> restores that saved game's newest backup. */
 #include "backup.h"
 #include "database.h"
+void host_recomp_options(void) { fprintf(stderr, "[options] Recomp Options chosen\n"); }
 void host_restore_backup(void) {
     const char *e = getenv("CM_BK_RESTORE");
     fprintf(stderr, "[backup] Restore Backup chosen\n");
@@ -298,3 +299,17 @@ void host_restore_backup(void) {
 
 /* Change Database (overrides.c): no panel without a window; the next database, as before */
 int host_choose_database(void) { if (db_count() < 2) return 0; db_next(); return 1; }
+/* Database Editor: CM_EDIT_DB=<number> (default: the one chosen for the game); "cancel" = none */
+/* a report (the Database Editor's Test Database): to stderr */
+void host_report(const char *title, char **lines, int n) { fprintf(stderr, "[report] %s\n", title); for (int i = 0; i < n; i++) fprintf(stderr, "[report] %s\n", lines[i]); }
+/* a list (the Database Editor's Load Database): CM_PICK=<number>, default the one suggested; "cancel" = none */
+int host_pick_list(const char *title, const char *choose, const char *head1, const char *head2,
+                   const char *const *col1, const char *const *col2, int n, int sel) {
+    (void)choose; (void)head1; (void)head2; (void)col2;
+    const char *e = getenv("CM_PICK"); int i = e ? (strcmp(e, "cancel") ? atoi(e) : -1) : sel;
+    if (i >= n) i = -1;
+    fprintf(stderr, "[pick] %s: %s\n", title, i >= 0 ? col1[i] : "(cancelled)");
+    return i;
+}
+int host_pick_database(void) { const char *e = getenv("CM_EDIT_DB"); if (e && !strcmp(e, "cancel")) return -1;
+    return e ? atoi(e) : db_selected(); }

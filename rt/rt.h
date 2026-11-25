@@ -6,7 +6,7 @@
 #include <string.h>
 #include <math.h>
 
-#define GUEST_MEM_SIZE (96u<<20)   /* 64MB as the game had it, and above that the data relocations.txt moves */
+#define GUEST_MEM_SIZE (112u<<20)  /* 64MB as the game had it, and above that the data relocations.txt moves */
 extern uint8_t *M;
 extern uint32_t eax,ecx,edx,ebx,esp,ebp,esi,edi;
 extern uint32_t g_cf,g_zf,g_sf,g_of,g_df;

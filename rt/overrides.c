@@ -46,9 +46,12 @@ void f_1013714(void) {
    Returns 1 if a pointer should be visible, filling rgba (11x11 ARGB8888) from the current palette. */
 int guest_pointer(uint32_t argb[11 * 11], int *shape) {
     extern uint8_t vga_dac[256][3];
-    if (!g_os_pointer || !RD8(PTR_ENABLED) || (int16_t)RD16(PTR_DRAG_ITEM) != -1) return 0;
-    *shape = RD8(PTR_SHAPE) ? 1 : 0;
-    uint32_t img = *shape ? PTR_IMG_ALT : PTR_IMG_ARROW;
+    /* the Database Editor (rt/editor.c, editor_text.c) has the same pointer code, its variables elsewhere */
+    uint32_t enabled = PTR_ENABLED, drag = PTR_DRAG_ITEM, shp = PTR_SHAPE, arrow = PTR_IMG_ARROW, alt = PTR_IMG_ALT;
+    if (g_editor_running) { enabled = 0x0103ACBDu; drag = 0x0103AAD4u; shp = 0x0103ACBCu; arrow = 0x0103AAD8u; alt = 0x0103ABCAu; }
+    if (!g_os_pointer || !RD8(enabled) || (int16_t)RD16(drag) != -1) return 0;
+    *shape = RD8(shp) ? 1 : 0;
+    uint32_t img = *shape ? alt : arrow;
     for (int i = 0; i < 121; i++) {
         uint32_t c = RD16(img + 2 * i) & 0xFF;
         if (!c) { argb[i] = 0; continue; }
@@ -192,23 +195,30 @@ void hook_change_database(void) {
 /* ---- competition histories for careers starting before 1997 (patches.txt) ----
  * Competition i's record is at 0x1172D22 + i * 0x7D4 in the original (0x4070000 + 0x1A + i * 0x7D4 since relocations.txt) (count: word at 0x1A3AF2C); its history is
  * 8-byte entries from +0x5BA, newest first: year of the final (97 = May 1997), then the winner
- * (+3) and runner-up (+5) as club numbers; an entry with year 0 ends the list. */
+ * (+3) and runner-up (+5) as club numbers; an entry with year 0 ends the list.
+ * New games only. The list ends with the finals up to May 1997; a competition whose list ends at 96
+ * has its final in the second half of the year (the Charity Shield and the other super cups in
+ * August, the Scottish League and Challenge Cups in November, the World Club Cup in December): for
+ * those, the career's own first year is still to be played too (a career from July 1995 plays the
+ * August 1995 Charity Shield), so its entry goes as well - else that year was there twice. */
 #define COMP_BASE   (0x04070000u + 0x1A)                 /* 0x1172D22 before relocations.txt moved them */
 #define COMP_SIZE   0x7D4
 #define COMP_COUNT  A(0xA3AF2C)
+#define COMP_ROOM   128                                  /* relocations.txt: room for 128 competitions */
 #define HIST_OFF    0x5BA
-#define HIST_MAX    ((COMP_SIZE - HIST_OFF) / 8)
+#define HIST_MAX    ((COMP_SIZE - 0x1A - HIST_OFF) / 8)       /* 64: the list runs to the record's end */
 void hook_trim_histories(void) {
     int last = start_year() - 1900;                     /* the latest final there can be: May of the start year */
     if (last >= 97) return;                              /* 97/98: the lists end there anyway */
     int n = (int)(int16_t)RD16(COMP_COUNT), removed = 0;
-    for (int c = 0; c < n && c < 64; c++) {
+    for (int c = 0; c < n && c < COMP_ROOM; c++) {
         uint32_t h = COMP_BASE + (uint32_t)c * COMP_SIZE + HIST_OFF;
+        int cut = RD8(h) == 96 ? last - 1 : last;       /* a final in the second half of the year: see above */
         int k = 0, w = 0;
         for (; k < HIST_MAX; k++) {
             uint8_t y = RD8(h + (uint32_t)k * 8);
             if (!y) break;
-            if (y > last) { removed++; continue; }
+            if (y > cut) { removed++; continue; }
             if (w != k) for (int b = 0; b < 8; b++) WR8(h + (uint32_t)w * 8 + (uint32_t)b, RD8(h + (uint32_t)k * 8 + (uint32_t)b));
             w++;
         }
@@ -223,21 +233,124 @@ void hook_trim_histories(void) {
     fprintf(stderr, "histories: %d results after May %d taken out (career starts %d)\n", removed, 1900 + last, start_year());
 }
 
+/* ---- repairing those histories in saved careers (patches.txt: after Restore Game loads them) ----
+ * Until 1.1.0 the trim above also ran when a game was loaded, so a 95/96 or 96/97 career lost every final
+ * played since it began each time it was loaded, and its August-December finals of the first year were
+ * there twice. The finals can be put back from the save's club histories (clhistN.S16): a record of 0x13DD
+ * bytes per club, 15 seasons of 339 bytes, newest first: year (word: 95 = 1995/96), the league's
+ * competition number, the place, ..., and from +14 a 3-byte entry per competition number: year (word),
+ * then 100 = won it, 101 = runner-up, else the round reached. A final is added only where the list has
+ * none for its year and both clubs are known (clubs from countries not played keep no history); a year
+ * twice in an August-December competition loses the second (the database's, as the game's is first).
+ * Lists that are right are left as they are, so this does nothing to a game saved by 1.1.0 or later. */
+#define CLH_REC   0x13DD
+#define CLH_SEASON 339
+#define CLH_SEASONS 15
+static int late_final(const char *name) {           /* a final in the second half of the year (see above) */
+    static const char *const late[] = { "W/Club Cup", "Charity Shield", "SC/Cola Cup", "L/Chal Cup", "Supercoppa Italiana",
+        "Super Copa Espa\xf1ola", "Supertaça", "Superta\xe7" "a", "German Liga-Cup", "Super Cup van Belgi\xeb", "Johan C-s", NULL };
+    for (int i = 0; late[i]; i++) if (!strcmp(name, late[i])) return 1;
+    return 0;
+}
+void hook_repair_histories(void) {
+    int first = start_year() - 1900;                     /* the career's first season (95 = 1995/96) */
+    if (first >= 97) return;                              /* 97/98 careers were never trimmed */
+    int slot = RD8(A(0xA44977)); if (slot < 1 || slot > 9) return;
+    char dir[1300], path[1400]; FILE *f = NULL;
+    cm_slot_dir(slot, 0, dir, sizeof dir);
+    for (int v = 0; v < 2 && !f; v++) { snprintf(path, sizeof path, v ? "%s/CLHIST%d.S16" : "%s/clhist%d.S16", dir, slot); f = fopen(path, "rb"); }
+    if (!f) return;
+    int n = (int)(int16_t)RD16(COMP_COUNT); if (n > COMP_ROOM) n = COMP_ROOM;
+    /* winners and runners-up by competition and season, from every club's record */
+    enum { SEAS = 8 };
+    static int16_t win[COMP_ROOM][SEAS], run[COMP_ROOM][SEAS];
+    for (int c = 0; c < COMP_ROOM; c++) for (int k = 0; k < SEAS; k++) win[c][k] = run[c][k] = -1;
+    static uint8_t r[CLH_REC]; int club = 0;
+    while (fread(r, 1, CLH_REC, f) == CLH_REC) {
+        for (int b = 0; b < CLH_SEASONS; b++) {
+            const uint8_t *x = r + b * CLH_SEASON; int s = x[0] | x[1] << 8, k = s - first;
+            if (!s || k < 0 || k >= SEAS) continue;
+            int lg = x[2], place = x[3];
+            if (lg < n && place == 1) win[lg][k] = (int16_t)club;
+            if (lg < n && place == 2) run[lg][k] = (int16_t)club;
+            for (int c = 0; c < n && 14 + 3 * c + 2 < CLH_SEASON; c++) {
+                const uint8_t *e = x + 14 + 3 * c;
+                if ((e[0] | e[1] << 8) != s) continue;
+                if (e[2] == 100) win[c][k] = (int16_t)club;
+                if (e[2] == 101) run[c][k] = (int16_t)club;
+            }
+        }
+        club++;
+    }
+    fclose(f);
+    int added = 0, dropped = 0;
+    for (int c = 0; c < n; c++) {
+        uint32_t rec = COMP_BASE - 0x1A + (uint32_t)c * COMP_SIZE, h = rec + 0x1A + HIST_OFF;
+        char name[48]; uint32_t np = RD32(rec + 8); int ln = 0;
+        for (; np && ln < 47 && RD8(np + (uint32_t)ln); ln++) name[ln] = (char)RD8(np + (uint32_t)ln);
+        name[ln] = 0;
+        int late = late_final(name);
+        uint8_t e[HIST_MAX][8]; int m = 0;
+        for (; m < HIST_MAX && RD8(h + (uint32_t)m * 8); m++) for (int q = 0; q < 8; q++) e[m][q] = RD8(h + (uint32_t)m * 8 + (uint32_t)q);
+        int was = m, changed = 0;
+        if (late) for (int i = 1; i < m; i++) if (e[i][0] == e[i - 1][0]) {        /* the same year twice */
+            memmove(e[i], e[i + 1], (size_t)(m - i - 1) * 8); m--; i--; dropped++; changed = 1;
+        }
+        for (int k = 0; k < SEAS; k++) {
+            if (win[c][k] < 0 || run[c][k] < 0) continue;
+            int y = first + k + (late ? 0 : 1);              /* the year of the final: May after the season, or its own */
+            int at = 0, have = 0;
+            for (int i = 0; i < m; i++) { if (e[i][0] == y) have = 1; if (e[i][0] > y) at = i + 1; }
+            if (have || m >= HIST_MAX) continue;
+            memmove(e[at + 1], e[at], (size_t)(m - at) * 8); m++;
+            memset(e[at], 0, 8); e[at][0] = (uint8_t)y;
+            e[at][3] = (uint8_t)win[c][k]; e[at][4] = (uint8_t)(win[c][k] >> 8);
+            e[at][5] = (uint8_t)run[c][k]; e[at][6] = (uint8_t)(run[c][k] >> 8);
+            added++; changed = 1;
+        }
+        if (!changed) continue;
+        for (int i = 0; i < HIST_MAX; i++) for (int q = 0; q < 8; q++) WR8(h + (uint32_t)i * 8 + (uint32_t)q, i < m ? e[i][q] : 0);
+        (void)was;
+    }
+    if (added || dropped) {
+        char t[160]; snprintf(t, sizeof t, "Competition histories repaired: %d final%s put back", added, added == 1 ? "" : "s");
+        fprintf(stderr, "histories: %d finals put back from the club histories, %d duplicates taken out\n", added, dropped);
+        extern void host_notify(const char *text); host_notify(t);
+    }
+}
+
 /* ---- Options screen: "Restore Backup" (patches.txt) ----
  * The menu's text ends "Delete Game*5|Change Directory*6|Hall Of Fame*7" (0xE7588); the version with
  * the extra box is longer than that space, so it lives in free conventional memory, between the
  * DOS environment (0x21000) and the DOS memory the game can allocate (from 0x30000). */
 #define OPTIONS_MENU_TAIL 0x00028000u
 uint32_t options_menu_tail(void) {
-    static const char tail[] = "Delete Game*5|Change Database*6|Restore Backup*8|Hall Of Fame*7";
-    memcpy(&M[OPTIONS_MENU_TAIL], tail, sizeof tail);
+    /* New Game, Restore Game, Delete Game, Restore Backup over Change Database, Database Editor, Hall Of
+       Fame (seven boxes: the game makes it four and three). The Database Editor (rt/editor.c) is always
+       there; without CM2ED.EXE and GAZZA.PCX it says which files to copy in. */
+    static const char menu[] = "Delete Game*5|Restore Backup*8|Change Database*6|Database Editor*9|Hall Of Fame*7";
+    memcpy(&M[OPTIONS_MENU_TAIL], menu, sizeof menu);
     return OPTIONS_MENU_TAIL;
 }
 void host_restore_backup(void);                  /* sdl.c: the Restore Backup panel; headless.c */
+void host_database_editor(void);                 /* the Database Editor (CM2ED); editor.c */
 void hook_options_choice(void) {                 /* after the menu's "is it Hall Of Fame?" test */
+    if ((int32_t)eax == 9) { host_database_editor(); return; }
     if ((int32_t)eax != 8) return;
     host_restore_backup();
     reload_slot_list();                          /* names and empty slots may have changed */
+}
+
+/* ---- In-game "Save Game & Options": Recomp Options (patches.txt 012595, 012632) ---- */
+#define INGAME_OPTIONS_TAIL 0x00028100u          /* after the Options screen's (above) */
+uint32_t ingame_options_tail(void) {
+    static const char menu[] = "Credits|CM Fan Club|Recomp Options";
+    memcpy(&M[INGAME_OPTIONS_TAIL], menu, sizeof menu);
+    return INGAME_OPTIONS_TAIL;
+}
+void host_recomp_options(void);                  /* sdl.c: the F1 menu; headless.c */
+void hook_ingame_options_choice(void) {          /* after the choice is stored at 0xc8(%esp) */
+    if ((int8_t)(eax & 0xFF) == 3) host_recomp_options();
 }
 
 /* How many leagues a new game may run (patches.txt 045817). The 16MB build's own limit is 3, and the
@@ -531,3 +644,39 @@ void hook_transfers_choice(void) {                         /* after the choice i
         eax = (eax & ~0xFFu) | 13u; edx = 13; WR8(esp + 0x190, 13);
     }
 }
+
+/* ---- How many players a new game keeps ----
+   The original kept no more than 9900 of the database's players (2475 a league, at least 5000): reached
+   with four leagues, so with more the smallest clubs were left short. The table has room for 24000
+   (relocations.txt). g_player_size: 0 small (the original's 9900), 1 medium (14000), 2 full (20000: the
+   whole 97/98 database, leaving room for the young players made each season) - the slider on "Choose
+   Leagues to Run" (sdl.c), saved in cm9798.cfg. CM_PLAYERS (small, medium, full or a number) overrides it. */
+int g_player_size = 2;
+const uint32_t g_player_sizes[3] = { 9900, 14000, 20000 };
+uint32_t player_limit(void) {
+    const char *s = getenv("CM_PLAYERS");
+    if (s && *s) {
+        if (!strcmp(s, "small")) return g_player_sizes[0];
+        if (!strcmp(s, "medium")) return g_player_sizes[1];
+        if (!strcmp(s, "full")) return g_player_sizes[2];
+        long n = strtol(s, NULL, 10);
+        if (n >= 5000 && n <= 20000) return (uint32_t)n;
+    }
+    return g_player_sizes[g_player_size >= 0 && g_player_size <= 2 ? g_player_size : 2];
+}
+
+/* ---- Select Team with more than ten pages ----
+   0x1075b2f pushes the number of buttons on the bottom bar (Done and one per page) on top of eleven
+   widths already pushed (Done's 3, ten pages' 1). With more than ten pages the layout routine read
+   widths past them. In its place: as many widths as buttons, and the matching pop after the call. */
+static uint32_t st_extra;                                   /* bytes pushed beyond the original 0x30 */
+void hook_select_team_layout_args(void) {                   /* for "push %eax" */
+    uint32_t n = eax;
+    if ((int32_t)n <= 11) { st_extra = 0; esp -= 4; WR32(esp, n); return; }
+    if (n > 40) n = 40;                                     /* the button tables hold 50 */
+    st_extra = 4 * (n - 11);
+    esp -= 4 + st_extra;                                    /* the block now ends where the original did */
+    WR32(esp, n); WR32(esp + 4, 3);
+    for (uint32_t k = 0; k < n - 1; k++) WR32(esp + 8 + 4 * k, 1);
+}
+void hook_select_team_layout_pop(void) { esp += 0x30 + st_extra; st_extra = 0; }

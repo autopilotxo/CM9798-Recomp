@@ -27,6 +27,7 @@ uint32_t calendar_old_buffer(void);  /* patches.txt, rt/ */
 uint32_t calendar_pack(void);  /* patches.txt, rt/ */
 uint32_t competition_menu_tail(void);  /* patches.txt, rt/ */
 uint32_t transfers_menu_tail(void);  /* patches.txt, rt/ */
+uint32_t player_limit(void);  /* patches.txt, rt/ */
 uint32_t first_season_year(void);  /* patches.txt, rt/ */
 uint32_t fixtures_old_buffer(void);  /* patches.txt, rt/ */
 uint32_t fixtures_pack(void);  /* patches.txt, rt/ */
@@ -36,6 +37,8 @@ void hook_commentary_event(void);  /* patches.txt, rt/ */
 void hook_competition_choice(void);  /* patches.txt, rt/ */
 void hook_transfers_enter(void);  /* patches.txt, rt/ */
 void hook_transfers_choice(void);  /* patches.txt, rt/ */
+void hook_select_team_layout_args(void);  /* patches.txt, rt/ */
+void hook_select_team_layout_pop(void);  /* patches.txt, rt/ */
 void hook_crowd_start(void);  /* patches.txt, rt/ */
 void hook_crowd_stop(void);  /* patches.txt, rt/ */
 void hook_intro_done(void);  /* patches.txt, rt/ */
@@ -56,7 +59,10 @@ void hook_save_club_comps(void);  /* patches.txt, rt/ */
 void hook_save_more_tables(void);  /* patches.txt, rt/ */
 void hook_save_tmdata_begin(void);  /* patches.txt, rt/ */
 void hook_text_glyph(void);  /* patches.txt, rt/ */
-void hook_trim_histories(void);  /* patches.txt, rt/ */
+void hook_trim_histories(void);
+void hook_repair_histories(void);  /* patches.txt, rt/ */
+uint32_t ingame_options_tail(void);
+void hook_ingame_options_choice(void);
 uint32_t match_speed_divisor(void);  /* patches.txt, rt/ */
 uint32_t max_leagues(void);  /* patches.txt, rt/ */
 uint32_t options_menu_tail(void);  /* patches.txt, rt/ */
