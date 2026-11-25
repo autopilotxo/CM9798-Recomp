@@ -8,6 +8,7 @@ int         db_start_year(void);              /* the year its first season start
 int         db_start_day(void);               /* the day and month a new game starts (16, 7 for 97/98) */
 int         db_start_month(void);
 int         db_count(void);
+int         db_players(void);                 /* players in the chosen database's PLAYERS.DB1 (-1: unknown) */
 void        db_next(void);                    /* the next one (headless tests) */
 int         db_selected(void);                /* index of the chosen one (-1: none found) */
 int         db_info(int i, const char **name, int *day, int *month, int *year);   /* database i; 0 = no such */

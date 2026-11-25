@@ -644,34 +644,52 @@ static void menu_draw(float k, int ox, int oy, int pw, int ph) {
 }
 
 /* ---- "Choose Leagues to Run": the Players slider above Done ----
-   Small | Medium | Full: how many of the database's players a new game keeps (overrides.c,
-   player_limit). In the game's 640x480 units; clicks on it are the port's, not the game's. */
+   How many of the database's players a new game keeps (overrides.c, player_limit): Small | Medium | Full.
+   Only the stops that can make a difference for the chosen database: Medium (14000) is the same as Full
+   when it has no more players than that (the 95/96 imports: about 11000), so it shows Small | Full; with
+   no more than Small's 9900 there is nothing to choose and no slider. In the game's 640x480 units;
+   clicks on it are the port's, not the game's. */
 #define PS_X0 200
 #define PS_X1 440
 #define PS_Y  407                                  /* the track's row (knob 18 high) */
-static int players_ui, players_drag;
-static int ps_stop_x(int i) { return PS_X0 + (PS_X1 - PS_X0) * i / 2; }
-static int players_hit(int x, int y) { return players_ui && x >= 158 && x < 482 && y >= 384 && y < 443; }
+int db_players(void);
+static int players_ui, players_drag, ps_n, ps_val[3];  /* the stops shown, and the size each sets */
+static void ps_stops(void) {
+    int np = db_players();                          /* -1: unknown - all three */
+    ps_n = 0;
+    if (np >= 0 && np <= 9900) return;
+    ps_val[ps_n++] = 0; if (np < 0 || np > 14000) ps_val[ps_n++] = 1; ps_val[ps_n++] = 2;
+}
+static int ps_stop_x(int i) { return PS_X0 + (PS_X1 - PS_X0) * i / (ps_n - 1); }
+static int ps_cur(void) {                           /* the stop showing the current size (Medium shown as Full without it) */
+    int v = g_player_size >= 0 && g_player_size <= 2 ? g_player_size : 2;
+    for (int i = 0; i < ps_n; i++) if (ps_val[i] == v) return i;
+    return ps_n - 1;
+}
+static int players_hit(int x, int y) { return players_ui && ps_n > 1 && x >= 158 && x < 482 && y >= 384 && y < 443; }
 static void players_set(int x) {
-    int best = 0; for (int i = 1; i < 3; i++) if (abs(x - ps_stop_x(i)) < abs(x - ps_stop_x(best))) best = i;
-    if (best != g_player_size) { g_player_size = best; present(); }
+    int best = 0; for (int i = 1; i < ps_n; i++) if (abs(x - ps_stop_x(i)) < abs(x - ps_stop_x(best))) best = i;
+    if (ps_val[best] != g_player_size) { g_player_size = ps_val[best]; present(); }
 }
 static void players_draw(float k, int ox, int oy) {
+    if (ps_n < 2) return;
     mk = k; mox = ox; moy = oy;
     SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
     const SDL_Color white = { 230, 230, 230, 255 }, yellow = { 255, 255, 40, 255 }, dim = { 170, 170, 170, 255 };
     static const char *const names[3] = { "Small", "Medium", "Full" };
-    static const char *const counts[3] = { "up to 9,900 players, as the original DOS game", "up to 14,000 players", "up to 20,000 players - the whole database" };
-    int cur = g_player_size >= 0 && g_player_size <= 2 ? g_player_size : 2;
-    char cap[96]; snprintf(cap, sizeof cap, "Players: %s, %s", names[cur], counts[cur]);
+    static const char *const counts[3] = { "up to 9,900 players, as the original DOS game", "up to 14,000 players", "up to 20,000 players" };
+    int cur = ps_cur(), v = ps_val[cur];
+    char cap[96];
+    if (v == 2 && ps_n == 2) snprintf(cap, sizeof cap, "Players: Full, all of this database's players");
+    else snprintf(cap, sizeof cap, "Players: %s, %s", names[v], counts[v]);
     mfill(158, 384, 324, 59, 0, 0, 0, 150);                                        /* a dark panel, for reading */
     mtext(cap, 0, 387, 640, 16, 11, white, 0, 1, 1);
     mfill(PS_X0, PS_Y + 6, PS_X1 - PS_X0, 6, 0, 0, 0, 255);                       /* the track */
     mfill(PS_X0 + 1, PS_Y + 7, PS_X1 - PS_X0 - 2, 4, 40, 40, 40, 255);
     if (cur) mfill(PS_X0 + 1, PS_Y + 7, ps_stop_x(cur) - PS_X0 - 1, 4, 200, 200, 40, 255);
-    for (int i = 0; i < 3; i++) {                                                    /* the stops and their names */
+    for (int i = 0; i < ps_n; i++) {                                                 /* the stops and their names */
         mfill(ps_stop_x(i) - 1, PS_Y + 3, 3, 12, 0, 0, 0, 255);
-        mtext(names[i], ps_stop_x(i) - 40, PS_Y + 19, 80, 14, 10, i == cur ? yellow : dim, i == cur, 1, 1);
+        mtext(names[ps_val[i]], ps_stop_x(i) - 40, PS_Y + 19, 80, 14, 10, i == cur ? yellow : dim, i == cur, 1, 1);
     }
     SDL_Rect kn = { ps_stop_x(cur) - 6, PS_Y, 12, 18 };
     mbevel(kn, players_drag ? 200 : 170);
@@ -1126,7 +1144,8 @@ static void present(void) {
     star_check(p, w, h, st);
     text_dim_clear();
     grey_leagues(rgb, p, w, h, st, sharp);
-    { int x0, y0, x1, y1; players_ui = w == 640 && h == 480 && text_find(p, st, "Choose Leagues to Run", &x0, &y0, &x1, &y1); }
+    { int x0, y0, x1, y1; players_ui = w == 640 && h == 480 && text_find(p, st, "Choose Leagues to Run", &x0, &y0, &x1, &y1);
+      if (players_ui) ps_stops(); }
     stat_colours(rgb, p, w, h, st, sharp);
     SDL_UpdateTexture(tex, NULL, rgb, w * 4);
     SDL_SetRenderDrawColor(ren, 0, 0, 0, 255); SDL_RenderClear(ren);

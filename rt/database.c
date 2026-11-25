@@ -345,6 +345,31 @@ int db_redirect(const char *dos_path, char *host, size_t n) {
     return 1;
 }
 
+/* ---- how many players the chosen database has (the Players slider on Choose Leagues to Run) ----
+   From PLAYERS.DB1's header and size alone; remembered until another database is chosen. -1: unknown. */
+int db_players(void) {
+    static char cached[64]; static int n = -1;
+    scan();
+    if (sel < 0) return -1;
+    if (!strcmp(cached, dbs[sel].dir)) return n;
+    snprintf(cached, sizeof cached, "%s", dbs[sel].dir); n = -1;
+    char dir[1200], path[1300]; snprintf(dir, sizeof dir, "%s/databases/%s", cm_game_dir(), dbs[sel].dir);
+    if (!find_in(dir, "PLAYERS.DB1", path, sizeof path)) return n;
+    FILE *f = fopen(path, "rb"); if (!f) return n;
+    uint8_t h[4096]; size_t got = fread(h, 1, sizeof h, f);
+    fseek(f, 0, SEEK_END); long len = ftell(f); fclose(f);
+    int nf = got > 2 ? h[0] | h[1] << 8 : 0, o = 2, rs = 0, uid = 0;
+    if (nf <= 0 || nf > 80) return n;
+    for (int i = 0; i < nf; i++) {
+        if ((size_t)o + 1 >= got || (size_t)(o + 1 + h[o] + 4) > got) return n;
+        int l = h[o];
+        if (l == 9 && !memcmp(h + o + 1, "Unique ID", 9) && h[o + 1 + l] == 0 && h[o + 2 + l] == 4) uid = 1;
+        rs += h[o + 2 + l]; o += 1 + l + 4;
+    }
+    if (rs > 0 && len > o + (uid ? 6 : 2)) n = (int)((len - o - (uid ? 6 : 2)) / rs);
+    return n;
+}
+
 /* ---- "Championship Manager 2" backgrounds (F1, Graphics; cm9798.cfg "backgrounds = cm2") ----
    CM2 (CM2.EXE) has one background at a time: STADPIC1-5.PCX in turn, the next one each day the game
    moves on, starting with STADPIC2 when a game begins; and on a club's screens the club's own picture
