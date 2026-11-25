@@ -195,23 +195,30 @@ void hook_change_database(void) {
 /* ---- competition histories for careers starting before 1997 (patches.txt) ----
  * Competition i's record is at 0x1172D22 + i * 0x7D4 in the original (0x4070000 + 0x1A + i * 0x7D4 since relocations.txt) (count: word at 0x1A3AF2C); its history is
  * 8-byte entries from +0x5BA, newest first: year of the final (97 = May 1997), then the winner
- * (+3) and runner-up (+5) as club numbers; an entry with year 0 ends the list. */
+ * (+3) and runner-up (+5) as club numbers; an entry with year 0 ends the list.
+ * New games only. The list ends with the finals up to May 1997; a competition whose list ends at 96
+ * has its final in the second half of the year (the Charity Shield and the other super cups in
+ * August, the Scottish League and Challenge Cups in November, the World Club Cup in December): for
+ * those, the career's own first year is still to be played too (a career from July 1995 plays the
+ * August 1995 Charity Shield), so its entry goes as well - else that year was there twice. */
 #define COMP_BASE   (0x04070000u + 0x1A)                 /* 0x1172D22 before relocations.txt moved them */
 #define COMP_SIZE   0x7D4
 #define COMP_COUNT  A(0xA3AF2C)
+#define COMP_ROOM   128                                  /* relocations.txt: room for 128 competitions */
 #define HIST_OFF    0x5BA
 #define HIST_MAX    ((COMP_SIZE - HIST_OFF) / 8)
 void hook_trim_histories(void) {
     int last = start_year() - 1900;                     /* the latest final there can be: May of the start year */
     if (last >= 97) return;                              /* 97/98: the lists end there anyway */
     int n = (int)(int16_t)RD16(COMP_COUNT), removed = 0;
-    for (int c = 0; c < n && c < 64; c++) {
+    for (int c = 0; c < n && c < COMP_ROOM; c++) {
         uint32_t h = COMP_BASE + (uint32_t)c * COMP_SIZE + HIST_OFF;
+        int cut = RD8(h) == 96 ? last - 1 : last;       /* a final in the second half of the year: see above */
         int k = 0, w = 0;
         for (; k < HIST_MAX; k++) {
             uint8_t y = RD8(h + (uint32_t)k * 8);
             if (!y) break;
-            if (y > last) { removed++; continue; }
+            if (y > cut) { removed++; continue; }
             if (w != k) for (int b = 0; b < 8; b++) WR8(h + (uint32_t)w * 8 + (uint32_t)b, RD8(h + (uint32_t)k * 8 + (uint32_t)b));
             w++;
         }

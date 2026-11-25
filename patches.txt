@@ -98,10 +98,11 @@
 # list of finals up to May 1997. A career starting earlier (CM2: 1995, 96/97: 1996) mustn't have
 # finals that haven't happened yet - and "last season's" winners (the Charity Shield, the cup
 # winners' European places) come from the newest entry. hook_trim_histories() drops entries after
-# the season before the career began. Called after each of the three calls to 0x37238.
+# the season before the career began. Called after the two calls to 0x37238 that start a new game -
+# not after the third (0x45426), which is Restore Game loading a saved career's competitions: there
+# it took out every final played since the career began, each time the game was loaded.
 045167 after hook_trim_histories();
 04518a after hook_trim_histories();
-045426 after hook_trim_histories();
 
 # Player screen: a star rating in the blue position bar (rt/stars.c, drawn by rt/sdl.c). The game
 # has just made the bar's text ("Forward (Right/Centre)", in eax) for player esi.
