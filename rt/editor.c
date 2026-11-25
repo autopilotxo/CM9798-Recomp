@@ -157,6 +157,12 @@ static int find_exe(char *out, size_t n) {
     return 0;
 }
 int editor_available(void) { char p[1200]; return e_nfuncs > 0 && parts[0].fresh && find_exe(p, sizeof p); }
+/* GAZZA.PCX: the editor's background picture */
+static int find_gazza(void) {
+    const char *v[2] = { "GAZZA.PCX", "gazza.pcx" }; char p[1200];
+    for (int i = 0; i < 2; i++) { snprintf(p, sizeof p, "%s/%s", g_game_dir, v[i]); struct stat st; if (!stat(p, &st)) return 1; }
+    return 0;
+}
 
 /* ---- a copy of each file before the editor first changes it ---- */
 static char backup_dir[1400]; static int backup_made;
@@ -190,7 +196,27 @@ static void editor_quit(int code) { (void)code; longjmp(back_to_game, 1); }
 
 void host_database_editor(void) {
     char exe[1200];
-    if (!editor_available() || !find_exe(exe, sizeof exe)) return;
+    int have_exe = find_exe(exe, sizeof exe), have_pic = find_gazza();
+    if (!have_exe || !have_pic) {                /* the button is always on the Options screen: say what's missing */
+        char t[1600], dir[1100];
+#ifdef _WIN32
+        if (!_fullpath(dir, g_game_dir, sizeof dir)) snprintf(dir, sizeof dir, "%s", g_game_dir);
+#else
+        { char *r = realpath(g_game_dir, NULL); snprintf(dir, sizeof dir, "%s", r ? r : g_game_dir); free(r); }
+#endif
+        snprintf(t, sizeof t, "The Database Editor is Championship Manager 2's own editor, and needs two of its files in "
+                 "the game folder:\n\n    CM2ED.EXE%s\n    GAZZA.PCX%s\n\nCopy them from Championship Manager 97/98 (its "
+                 "CD or folder) into:\n%s\n\nthen set the game up again with cm9798setup, so it is made with the editor.",
+                 have_exe ? "  (found)" : "  (missing)", have_pic ? "  (found)" : "  (missing)", dir);
+        host_message("Database Editor", t);
+        return;
+    }
+    if (!editor_available()) {                   /* the files are there, but the game was made without them */
+        host_message("Database Editor", "CM2ED.EXE and GAZZA.PCX are in the game folder, but the game was made before they "
+                     "were there (or CM2ED.EXE isn't the v2.00 the editor needs).\n\nSet the game up again with cm9798setup, "
+                     "so it is made with the editor.");
+        return;
+    }
     /* which database: its folder (databases/<folder>), or the game folder when there are none */
     if (db_count() > 0) {
         int i = host_pick_database(); const char *f = db_folder(i), *name; int dd, mm, yy;

@@ -158,7 +158,7 @@ static void ui_progress(int permille, const char *what) {
     while (SDL_PollEvent(&e)) if (e.type == SDL_QUIT) ui_cancelled = 1;
     SDL_SetRenderDrawColor(ren, 24, 40, 24, 255); SDL_RenderClear(ren);
     text(&title, 24, 16, "Getting the game ready", 255, 230, 60);
-    text(&body, 24, 54, "The first time it runs, the game is made from your own CM2E16.EXE.", 235, 235, 235);
+    text(&body, 24, 54, "The first time it runs, the game is built from your own executables.", 235, 235, 235);
     text(&body, 24, 74, "This takes a minute or two, and only happens once.", 150, 150, 150);
     SDL_Rect bar = { 24, 108, 512, 18 };
     SDL_SetRenderDrawColor(ren, 52, 70, 52, 255); SDL_RenderFillRect(ren, &bar);
@@ -756,7 +756,7 @@ int main(int argc, char **argv) {
             char tail[1200] = "", msg[3400];
             if (strstr(err, "compiled") || strstr(err, "linked")) log_tail(tail, sizeof tail, 8);   /* what the compiler said */
             if (ui_cancelled) { ui_close(); return 1; }
-            snprintf(msg, sizeof msg, "The game couldn't be made from CM2E16.EXE.\n\n%s\n\n%s%s\n(The full details are in %s)", err,
+            snprintf(msg, sizeof msg, "The game couldn't be built from your executables.\n\n%s\n\n%s%s\n(The full details are in %s)", err,
                      tail[0] ? "The compiler said:\n" : "", tail, logpath);
             ui_error(msg); ui_close(); return 1;
         }

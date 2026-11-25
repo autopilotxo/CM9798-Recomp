@@ -282,19 +282,11 @@ int install_check_cm2(const char *dir, char *msg, size_t n) {
 }
 /* the league editions the importer takes, in install_opts.euro's order; season: the database they add to */
 static const struct install_edition editions[INSTALL_NEDITIONS] = {
-    { "the French edition",  "French",     "France",   1995, 0 }, { "the Italian edition", "Italian", "Italy",   1995, 1 },
-    { "the Spanish edition", "Spanish",    "Spain",    1995, 2 }, { "the German edition",  "German",  "Germany", 1995, 3 },
-    { "the Dutch edition",   "Dutch",      "Holland",  1995, 4 }, { "the Belgian edition", "Belgian", "Belgium", 1995, 5 },
-    { "Italian Leagues",     "Italian",    "Italy",    1996, 6 },   /* (releases of their own, with 1996/97's squads) */
-    { "Liga Portuguesa",     "Portuguese", "Portugal", 1996, 7 },
-    /* ...and Liga Portuguesa in the 1995/96 database too: there was no Portuguese edition of CM2 itself, so
-       its 1996/97 clubs, players and managers go into 1995/96 as they are (a season early, but complete) */
-    { "Liga Portuguesa",     "Portuguese", "Portugal", 1995, 7 } };
-/* the edition in slot k of install_opts.euro: its own, or (another release given there) that release's */
-static int slot_edition(const struct install_opts *o, int k) {
-    int r = o->euro[k][0] ? install_euro_release(o->euro[k]) : -1;
-    return r < 0 ? -1 : editions[k].release == r ? k : r;
-}
+    { "the French edition",  "French",     "France",   1995 }, { "the Italian edition", "Italian", "Italy",   1995 },
+    { "the Spanish edition", "Spanish",    "Spain",    1995 }, { "the German edition",  "German",  "Germany", 1995 },
+    { "the Dutch edition",   "Dutch",      "Holland",  1995 }, { "the Belgian edition", "Belgian", "Belgium", 1995 },
+    { "Italian Leagues",     "Italian",    "Italy",    1996 },   /* (releases of their own, with 1996/97's squads) */
+    { "Liga Portuguesa",     "Portuguese", "Portugal", 1996 } };
 const struct install_edition *install_edition(int k) { return k >= 0 && k < INSTALL_NEDITIONS ? &editions[k] : NULL; }
 int install_euro_release(const char *dir) {
     char m[300]; return dir[0] && is_dir(dir) ? match_release(dir, euro_releases, "data", m, sizeof m) : -1;
@@ -479,7 +471,7 @@ int install_run(const struct install_opts *o, install_log_fn log) {
         /* the build kit: the first time the game is started, cm9798 makes it from CM2E16.EXE with this */
         { char from[1300], to[1300]; snprintf(from, sizeof from, "%s/build", o->port_dir); snprintf(to, sizeof to, "%s/build", o->dst);
           if (is_dir(from)) {
-              say("The build kit (the game is made from your CM2E16.EXE the first time it's started)...\n");
+              say("The build kit (the game is built from your executables the first time it's started)...\n");
               int k = put_kit(from, to); n_copied += k; say("  %d files\n", k);   /* (an older game is made again: game.stamp) */
           } else say("  no build folder next to the installer - the game can't be made without it\n"); }
 #ifdef __APPLE__
@@ -506,13 +498,13 @@ imports:
         say("\n");
         const char *euro[INSTALL_NEDITIONS]; int ne = 0;       /* the league editions of this one's season */
         for (int k = 0; k < INSTALL_NEDITIONS; k++) {
-            int e = slot_edition(o, k);
-            if (e >= 0 && editions[e].season == yr[i]) euro[ne++] = o->euro[k];
+            int r = o->euro[k][0] ? install_euro_release(o->euro[k]) : -1;
+            if (r >= 0 && editions[r].season == yr[i]) euro[ne++] = o->euro[k];
         }
         if (cm2_import(cm[i], o->dst, other, euro, ne, log) != 0) { say("\nThat one wasn't imported.\n"); import_failed = 1; }
     }
     for (int k = 0; k < INSTALL_NEDITIONS; k++) {            /* any left without the game they add to */
-        int r = slot_edition(o, k); if (r < 0) continue;
+        int r = o->euro[k][0] ? install_euro_release(o->euro[k]) : -1; if (r < 0) continue;
         int have = (cm[0][0] && yr[0] == editions[r].season) || (cm[1][0] && yr[1] == editions[r].season);
         if (!have) say("\n%s was left out: it adds to the %s database, so give that folder too.\n", editions[r].name,
                        editions[r].season == 1995 ? "Championship Manager 2 (1995/96)" : "CM2 96/97 Update");

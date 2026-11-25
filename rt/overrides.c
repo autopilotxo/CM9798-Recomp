@@ -239,12 +239,11 @@ void hook_trim_histories(void) {
  * DOS environment (0x21000) and the DOS memory the game can allocate (from 0x30000). */
 #define OPTIONS_MENU_TAIL 0x00028000u
 uint32_t options_menu_tail(void) {
-    /* with the Database Editor (rt/editor.c): New Game, Restore Game, Delete Game, Restore Backup over
-       Change Database, Database Editor, Hall Of Fame (seven boxes: the game makes it four and three) */
-    static const char with_editor[] = "Delete Game*5|Restore Backup*8|Change Database*6|Database Editor*9|Hall Of Fame*7";
-    static const char without[] = "Delete Game*5|Change Database*6|Restore Backup*8|Hall Of Fame*7";
-    if (editor_available()) memcpy(&M[OPTIONS_MENU_TAIL], with_editor, sizeof with_editor);
-    else memcpy(&M[OPTIONS_MENU_TAIL], without, sizeof without);
+    /* New Game, Restore Game, Delete Game, Restore Backup over Change Database, Database Editor, Hall Of
+       Fame (seven boxes: the game makes it four and three). The Database Editor (rt/editor.c) is always
+       there; without CM2ED.EXE and GAZZA.PCX it says which files to copy in. */
+    static const char menu[] = "Delete Game*5|Restore Backup*8|Change Database*6|Database Editor*9|Hall Of Fame*7";
+    memcpy(&M[OPTIONS_MENU_TAIL], menu, sizeof menu);
     return OPTIONS_MENU_TAIL;
 }
 void host_restore_backup(void);                  /* sdl.c: the Restore Backup panel; headless.c */
