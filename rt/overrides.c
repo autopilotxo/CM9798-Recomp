@@ -206,7 +206,9 @@ void hook_change_database(void) {
 #define COMP_COUNT  A(0xA3AF2C)
 #define COMP_ROOM   128                                  /* relocations.txt: room for 128 competitions */
 #define HIST_OFF    0x5BA
-#define HIST_MAX    ((COMP_SIZE - 0x1A - HIST_OFF) / 8)       /* 64: the list runs to the record's end */
+#define HIST_MAX    20      /* the game keeps 20 (0x1032924: entries 0-18 move down, the new one goes first);
+                               right after them, at +0x674, are a word and the competition's stage schedule
+                               (+0x676, 7 bytes a stage: 0x10340b4), which nothing here may touch */
 void hook_trim_histories(void) {
     int last = start_year() - 1900;                     /* the latest final there can be: May of the start year */
     if (last >= 97) return;                              /* 97/98: the lists end there anyway */
@@ -301,7 +303,11 @@ void hook_repair_histories(void) {
             int y = first + k + (late ? 0 : 1);              /* the year of the final: May after the season, or its own */
             int at = 0, have = 0;
             for (int i = 0; i < m; i++) { if (e[i][0] == y) have = 1; if (e[i][0] > y) at = i + 1; }
-            if (have || m >= HIST_MAX) continue;
+            if (have) continue;
+            if (m >= HIST_MAX) {                         /* full: the oldest goes, as when the game adds one */
+                if (at >= HIST_MAX) continue;            /* older than all 20 */
+                m--;
+            }
             memmove(e[at + 1], e[at], (size_t)(m - at) * 8); m++;
             memset(e[at], 0, 8); e[at][0] = (uint8_t)y;
             e[at][3] = (uint8_t)win[c][k]; e[at][4] = (uint8_t)(win[c][k] >> 8);
